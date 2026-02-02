@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/allwaysyou/llm-agent/internal/pkg/constants"
 )
 
 // Provider defines the embedding provider interface
@@ -27,10 +29,10 @@ type OpenAIProvider struct {
 // NewOpenAIProvider creates a new OpenAI embedding provider
 func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+		baseURL = constants.DefaultOpenAIBaseURL
 	}
 	if model == "" {
-		model = "text-embedding-3-small"
+		model = constants.DefaultOpenAIModel
 	}
 	return &OpenAIProvider{
 		apiKey:  apiKey,
@@ -121,10 +123,10 @@ type OllamaProvider struct {
 // NewOllamaProvider creates a new Ollama embedding provider
 func NewOllamaProvider(baseURL, model string) *OllamaProvider {
 	if baseURL == "" {
-		baseURL = "http://localhost:11434"
+		baseURL = constants.DefaultOllamaBaseURL
 	}
 	if model == "" {
-		model = "nomic-embed-text"
+		model = constants.DefaultOllamaModel
 	}
 	return &OllamaProvider{
 		baseURL: strings.TrimSuffix(baseURL, "/"),

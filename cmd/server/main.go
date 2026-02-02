@@ -96,11 +96,11 @@ func main() {
 	}
 
 	// Initialize memory manager (new architecture)
-	memoryManager := memory.NewManager(memoryRepo, knowledgeRepo, vectorStore, embedProvider)
+	memoryManager := memory.NewManager(memoryRepo, knowledgeRepo, vectorStore, embedProvider, cfg.Memory)
 
 	// Initialize services
-	memoryService := service.NewMemoryService(memoryRepo, knowledgeRepo, sessionRepo, vectorStore, embedProvider)
-	chatService := service.NewChatService(configService, sessionRepo, memoryManager, adapterFactory)
+	memoryService := service.NewMemoryService(memoryRepo, knowledgeRepo, sessionRepo, vectorStore, embedProvider, cfg.Memory)
+	chatService := service.NewChatService(configService, sessionRepo, memoryManager, adapterFactory, cfg.LLM)
 	summarizeService := service.NewSummarizeService(sessionRepo, memoryRepo, configService, adapterFactory)
 
 	// Initialize handlers

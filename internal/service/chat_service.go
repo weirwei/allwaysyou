@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/allwaysyou/llm-agent/internal/adapter"
+	"github.com/allwaysyou/llm-agent/internal/config"
 	"github.com/allwaysyou/llm-agent/internal/model"
+	"github.com/allwaysyou/llm-agent/internal/pkg/constants"
 	"github.com/allwaysyou/llm-agent/internal/pkg/memory"
 	"github.com/allwaysyou/llm-agent/internal/repository"
 	"github.com/google/uuid"
@@ -19,6 +21,7 @@ type ChatService struct {
 	sessionRepo    *repository.SessionRepository
 	memoryManager  *memory.DefaultManager
 	adapterFactory *adapter.AdapterFactory
+	llmConfig      config.LLMDefaults
 }
 
 // NewChatService creates a new chat service
@@ -27,12 +30,14 @@ func NewChatService(
 	sessionRepo *repository.SessionRepository,
 	memoryManager *memory.DefaultManager,
 	adapterFactory *adapter.AdapterFactory,
+	llmCfg config.LLMDefaults,
 ) *ChatService {
 	return &ChatService{
 		configService:  configService,
 		sessionRepo:    sessionRepo,
 		memoryManager:  memoryManager,
 		adapterFactory: adapterFactory,
+		llmConfig:      llmCfg,
 	}
 }
 
@@ -93,7 +98,7 @@ func (s *ChatService) Chat(ctx context.Context, req *model.ChatRequest) (*model.
 	if session == nil {
 		session = &model.Session{
 			ID:        uuid.New().String(),
-			Title:     generateTitle(req.Messages),
+			Title:     generateTitle(req.Messages, s.llmConfig.TitleMaxLength),
 			ConfigID:  llmConfig.ID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -217,7 +222,7 @@ func (s *ChatService) ChatStream(ctx context.Context, req *model.ChatRequest) (<
 	if session == nil {
 		session = &model.Session{
 			ID:        uuid.New().String(),
-			Title:     generateTitle(req.Messages),
+			Title:     generateTitle(req.Messages, s.llmConfig.TitleMaxLength),
 			ConfigID:  llmConfig.ID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -257,7 +262,7 @@ func (s *ChatService) ChatStream(ctx context.Context, req *model.ChatRequest) (<
 	}
 
 	// Wrap stream to save response
-	outCh := make(chan model.StreamChunk, 100)
+	outCh := make(chan model.StreamChunk, s.llmConfig.StreamBufferSize)
 	go func() {
 		defer close(outCh)
 
@@ -300,15 +305,15 @@ func (s *ChatService) ChatStream(ctx context.Context, req *model.ChatRequest) (<
 }
 
 // generateTitle generates a title from the first message
-func generateTitle(messages []model.Message) string {
+func generateTitle(messages []model.Message, maxLen int) string {
 	for _, msg := range messages {
 		if msg.Role == model.RoleUser && msg.Content != "" {
 			title := msg.Content
-			if len(title) > 50 {
-				title = title[:47] + "..."
+			if len(title) > maxLen {
+				title = title[:maxLen-3] + "..."
 			}
 			return title
 		}
 	}
-	return "New Chat"
+	return constants.DefaultSessionTitle
 }

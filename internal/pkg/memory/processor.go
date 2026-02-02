@@ -8,15 +8,19 @@ import (
 	"strings"
 
 	"github.com/allwaysyou/llm-agent/internal/adapter"
+	"github.com/allwaysyou/llm-agent/internal/config"
 	"github.com/allwaysyou/llm-agent/internal/model"
+	"github.com/allwaysyou/llm-agent/internal/pkg/constants"
 )
 
 // Processor handles LLM-based memory processing
-type Processor struct{}
+type Processor struct {
+	config config.MemoryConfig
+}
 
 // NewProcessor creates a new memory processor
-func NewProcessor() *Processor {
-	return &Processor{}
+func NewProcessor(cfg config.MemoryConfig) *Processor {
+	return &Processor{config: cfg}
 }
 
 // ExtractFacts extracts key facts from a conversation using LLM
@@ -24,31 +28,10 @@ func (p *Processor) ExtractFacts(ctx context.Context, userMsg, assistantResp str
 	log.Printf("[Processor:ExtractFacts] Starting - UserMsg='%.50s...', AssistantResp='%.50s...'",
 		userMsg, assistantResp)
 
-	prompt := `分析以下对话，提取用户透露的关键信息。
-
-对话:
-用户: %s
-助手: %s
-
-请以JSON数组格式返回提取的事实，每个事实包含:
-- content: 事实内容（简洁的陈述句）
-- category: 类别（personal_info=个人信息, preference=偏好, fact=事实, event=事件）
-- importance: 重要性(0-1)
-
-示例输出:
-[
-  {"content": "用户名字是张三", "category": "personal_info", "importance": 0.9},
-  {"content": "用户喜欢喝咖啡", "category": "preference", "importance": 0.6}
-]
-
-如果没有值得记住的信息，返回空数组: []
-
-注意：只提取用户明确说出的信息，不要推断。`
-
 	messages := []model.Message{
 		{
 			Role:    model.RoleUser,
-			Content: fmt.Sprintf(prompt, userMsg, assistantResp),
+			Content: fmt.Sprintf(constants.FactExtractionPrompt, userMsg, assistantResp),
 		},
 	}
 
@@ -78,7 +61,7 @@ func (p *Processor) ExtractFacts(ctx context.Context, userMsg, assistantResp str
 	for i := range facts {
 		facts[i].Category = normalizeCategory(string(facts[i].Category))
 		if facts[i].Importance <= 0 || facts[i].Importance > 1 {
-			facts[i].Importance = 0.5
+			facts[i].Importance = p.config.DefaultImportance
 		}
 		log.Printf("[Processor:ExtractFacts] Fact %d: Category=%s, Importance=%.2f, Content='%s'",
 			i, facts[i].Category, facts[i].Importance, facts[i].Content)
@@ -104,38 +87,19 @@ func (p *Processor) DetectConflict(ctx context.Context, newFact ExtractedFact, e
 	for _, k := range existingKnowledge {
 		log.Printf("[Processor:DetectConflict] Checking knowledge - ID=%s, Score=%.3f, IsActive=%v, Content='%s'",
 			k.Knowledge.ID, k.Score, k.Knowledge.IsActive(), k.Knowledge.Content)
-		if k.Score > 0.85 && k.Knowledge.IsActive() {
+		if k.Score > p.config.ConflictDetectionThreshold && k.Knowledge.IsActive() {
 			candidates = append(candidates, k.Knowledge.Content)
 			candidateIDs = append(candidateIDs, k.Knowledge.ID)
 		}
 	}
 
 	if len(candidates) == 0 {
-		log.Printf("[Processor:DetectConflict] No high-similarity candidates (>0.85) -> CREATE")
+		log.Printf("[Processor:DetectConflict] No high-similarity candidates (>%.2f) -> CREATE", p.config.ConflictDetectionThreshold)
 		return &ConflictResult{HasConflict: false, Action: ActionCreate}, nil
 	}
 	log.Printf("[Processor:DetectConflict] Found %d high-similarity candidates", len(candidates))
 
 	// Use LLM to detect conflict
-	prompt := `判断新信息是否与已有信息冲突或重复。
-
-新信息: %s
-
-已有信息:
-%s
-
-请回答(JSON格式):
-{
-  "is_duplicate": true/false,  // 是否完全重复
-  "is_conflict": true/false,   // 是否存在冲突(新信息更新了旧信息)
-  "conflict_index": -1         // 冲突的已有信息索引(0开始)，无冲突则为-1
-}
-
-示例:
-- 新"住在上海" vs 旧"住在北京" -> conflict=true
-- 新"喜欢咖啡" vs 旧"喜欢喝咖啡" -> duplicate=true
-- 新"养了一只猫" vs 旧"喜欢运动" -> 都是false`
-
 	existingStr := ""
 	for i, c := range candidates {
 		existingStr += fmt.Sprintf("%d. %s\n", i, c)
@@ -144,7 +108,7 @@ func (p *Processor) DetectConflict(ctx context.Context, newFact ExtractedFact, e
 	messages := []model.Message{
 		{
 			Role:    model.RoleUser,
-			Content: fmt.Sprintf(prompt, newFact.Content, existingStr),
+			Content: fmt.Sprintf(constants.ConflictDetectionPrompt, newFact.Content, existingStr),
 		},
 	}
 

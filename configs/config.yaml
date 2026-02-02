@@ -20,6 +20,30 @@ embedding:
   model: "nomic-embed-text"  # ollama: nomic-embed-text, mxbai-embed-large; openai: text-embedding-3-small
   base_url: "http://localhost:11434"  # ollama base url
 
+# Memory system configuration
+memory:
+  # Search thresholds (0.0 - 1.0)
+  conflict_detection_threshold: 0.85  # Threshold for detecting conflicting knowledge
+  similar_knowledge_threshold: 0.7    # Threshold for finding similar knowledge
+  context_relevance_threshold: 0.5    # Min score for including knowledge in context
+
+  # Limits
+  default_search_limit: 10            # Default limit for search queries
+  context_knowledge_limit: 20         # Max knowledge items to search for context
+  max_knowledge_in_context: 8         # Max knowledge parts to include in context
+  recent_memory_limit: 10             # Recent conversation history limit
+  conflict_check_limit: 5             # Limit for conflict detection search
+
+  # Default values
+  default_importance: 0.5             # Default importance for extracted facts
+
+# LLM defaults
+llm:
+  max_tokens: 4096                    # Default max tokens for LLM responses
+  temperature: 0.7                    # Default temperature
+  stream_buffer_size: 100             # Stream channel buffer size
+  title_max_length: 50                # Max length for session titles
+
 log:
   level: "info"  # debug, info, warn, error
   format: "json"  # json, text

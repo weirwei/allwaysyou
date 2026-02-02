@@ -14,6 +14,8 @@ type Config struct {
 	Vector     VectorConfig     `mapstructure:"vector"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
 	Embedding  EmbeddingConfig  `mapstructure:"embedding"`
+	Memory     MemoryConfig     `mapstructure:"memory"`
+	LLM        LLMDefaults      `mapstructure:"llm"`
 	Log        LogConfig        `mapstructure:"log"`
 }
 
@@ -45,6 +47,32 @@ type EmbeddingConfig struct {
 type LogConfig struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
+}
+
+// MemoryConfig contains memory system configuration
+type MemoryConfig struct {
+	// Search thresholds
+	ConflictDetectionThreshold float32 `mapstructure:"conflict_detection_threshold"` // Threshold for detecting similar knowledge (default: 0.85)
+	SimilarKnowledgeThreshold  float32 `mapstructure:"similar_knowledge_threshold"`  // Threshold for similar knowledge search (default: 0.7)
+	ContextRelevanceThreshold  float32 `mapstructure:"context_relevance_threshold"`  // Min score for including in context (default: 0.5)
+
+	// Limits
+	DefaultSearchLimit    int `mapstructure:"default_search_limit"`     // Default limit for search queries (default: 10)
+	ContextKnowledgeLimit int `mapstructure:"context_knowledge_limit"`  // Max knowledge items in context (default: 20)
+	MaxKnowledgeInContext int `mapstructure:"max_knowledge_in_context"` // Max knowledge parts to include (default: 8)
+	RecentMemoryLimit     int `mapstructure:"recent_memory_limit"`      // Recent conversation history limit (default: 10)
+	ConflictCheckLimit    int `mapstructure:"conflict_check_limit"`     // Limit for conflict detection search (default: 5)
+
+	// Default values
+	DefaultImportance float32 `mapstructure:"default_importance"` // Default importance for extracted facts (default: 0.5)
+}
+
+// LLMDefaults contains default LLM configuration
+type LLMDefaults struct {
+	MaxTokens        int     `mapstructure:"max_tokens"`         // Default max tokens (default: 4096)
+	Temperature      float32 `mapstructure:"temperature"`        // Default temperature (default: 0.7)
+	StreamBufferSize int     `mapstructure:"stream_buffer_size"` // Stream channel buffer size (default: 100)
+	TitleMaxLength   int     `mapstructure:"title_max_length"`   // Max length for session titles (default: 50)
 }
 
 func Load(configPath string) (*Config, error) {
@@ -80,6 +108,10 @@ func Load(configPath string) (*Config, error) {
 		cfg.Encryption.Key = envKey
 	}
 
+	// Apply default values for Memory config
+	cfg.Memory.applyDefaults()
+	cfg.LLM.applyDefaults()
+
 	// Validate
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
@@ -102,4 +134,51 @@ func (c *Config) Validate() error {
 
 func (c *Config) Address() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)
+}
+
+// applyDefaults sets default values for MemoryConfig if not specified
+func (m *MemoryConfig) applyDefaults() {
+	if m.ConflictDetectionThreshold <= 0 {
+		m.ConflictDetectionThreshold = 0.85
+	}
+	if m.SimilarKnowledgeThreshold <= 0 {
+		m.SimilarKnowledgeThreshold = 0.7
+	}
+	if m.ContextRelevanceThreshold <= 0 {
+		m.ContextRelevanceThreshold = 0.5
+	}
+	if m.DefaultSearchLimit <= 0 {
+		m.DefaultSearchLimit = 10
+	}
+	if m.ContextKnowledgeLimit <= 0 {
+		m.ContextKnowledgeLimit = 20
+	}
+	if m.MaxKnowledgeInContext <= 0 {
+		m.MaxKnowledgeInContext = 8
+	}
+	if m.RecentMemoryLimit <= 0 {
+		m.RecentMemoryLimit = 10
+	}
+	if m.ConflictCheckLimit <= 0 {
+		m.ConflictCheckLimit = 5
+	}
+	if m.DefaultImportance <= 0 {
+		m.DefaultImportance = 0.5
+	}
+}
+
+// applyDefaults sets default values for LLMDefaults if not specified
+func (l *LLMDefaults) applyDefaults() {
+	if l.MaxTokens <= 0 {
+		l.MaxTokens = 4096
+	}
+	if l.Temperature <= 0 {
+		l.Temperature = 0.7
+	}
+	if l.StreamBufferSize <= 0 {
+		l.StreamBufferSize = 100
+	}
+	if l.TitleMaxLength <= 0 {
+		l.TitleMaxLength = 50
+	}
 }

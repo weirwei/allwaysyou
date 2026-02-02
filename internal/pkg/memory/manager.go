@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/allwaysyou/llm-agent/internal/adapter"
+	"github.com/allwaysyou/llm-agent/internal/config"
 	"github.com/allwaysyou/llm-agent/internal/model"
+	"github.com/allwaysyou/llm-agent/internal/pkg/constants"
 	"github.com/allwaysyou/llm-agent/internal/pkg/embedding"
 	"github.com/allwaysyou/llm-agent/internal/pkg/vector"
 	"github.com/allwaysyou/llm-agent/internal/repository"
@@ -21,6 +23,7 @@ type DefaultManager struct {
 	vectorStore   *vector.VectorStore
 	embedProvider embedding.Provider
 	processor     *Processor
+	config        config.MemoryConfig
 }
 
 // NewManager creates a new memory manager
@@ -29,13 +32,15 @@ func NewManager(
 	knowledgeRepo *repository.KnowledgeRepository,
 	vectorStore *vector.VectorStore,
 	embedProvider embedding.Provider,
+	cfg config.MemoryConfig,
 ) *DefaultManager {
 	return &DefaultManager{
 		memoryRepo:    memoryRepo,
 		knowledgeRepo: knowledgeRepo,
 		vectorStore:   vectorStore,
 		embedProvider: embedProvider,
-		processor:     NewProcessor(),
+		processor:     NewProcessor(cfg),
+		config:        cfg,
 	}
 }
 
@@ -76,7 +81,7 @@ func (m *DefaultManager) AddKnowledge(ctx context.Context, opts AddKnowledgeOpti
 
 	// Set defaults
 	if opts.Importance <= 0 || opts.Importance > 1 {
-		opts.Importance = 0.5
+		opts.Importance = m.config.DefaultImportance
 	}
 	if opts.Source == "" {
 		opts.Source = model.SourceExtracted
@@ -121,13 +126,13 @@ func (m *DefaultManager) saveKnowledgeEmbedding(knowledge *model.Knowledge, cate
 		Content:   knowledge.Content,
 		Embedding: emb,
 		Metadata: map[string]string{
-			"type":      "knowledge",
-			"category":  string(category),
-			"source":    string(source),
-			"is_active": "true",
+			constants.MetadataKeyType:     constants.RoleKnowledge,
+			constants.MetadataKeyCategory: string(category),
+			constants.MetadataKeySource:   string(source),
+			constants.MetadataKeyIsActive: constants.MetadataValueTrue,
 		},
 		MetaData: &vector.DocumentMetadata{
-			Role:       "knowledge",
+			Role:       constants.RoleKnowledge,
 			Category:   string(category),
 			Source:     string(source),
 			Importance: importance,
@@ -154,7 +159,7 @@ func (m *DefaultManager) SearchKnowledge(ctx context.Context, opts SearchOptions
 	}
 
 	if opts.Limit <= 0 {
-		opts.Limit = 10
+		opts.Limit = m.config.DefaultSearchLimit
 	}
 
 	// Get query embedding
@@ -186,7 +191,7 @@ func (m *DefaultManager) SearchKnowledge(ctx context.Context, opts SearchOptions
 	searchResults := make([]model.KnowledgeSearchResult, 0, len(results))
 	for _, r := range results {
 		// Only include knowledge documents
-		if r.Document.MetaData == nil || r.Document.MetaData.Role != "knowledge" {
+		if r.Document.MetaData == nil || r.Document.MetaData.Role != constants.RoleKnowledge {
 			continue
 		}
 
@@ -216,7 +221,7 @@ func (m *DefaultManager) BuildContext(ctx context.Context, sessionID, query stri
 	var messages []model.Message
 
 	// 1. Get recent conversation history from this session
-	recentMemories, err := m.memoryRepo.GetRecentBySessionID(sessionID, 10)
+	recentMemories, err := m.memoryRepo.GetRecentBySessionID(sessionID, m.config.RecentMemoryLimit)
 	if err != nil {
 		log.Printf("[Memory:BuildContext] Error getting recent memories: %v", err)
 		return nil, fmt.Errorf("failed to get recent memories: %w", err)
@@ -231,8 +236,8 @@ func (m *DefaultManager) BuildContext(ctx context.Context, sessionID, query stri
 			Query:      query,
 			Categories: []model.KnowledgeCategory{model.CategoryPersonalInfo, model.CategoryPreference, model.CategoryFact},
 			ActiveOnly: true,
-			MinScore:   0.5,
-			Limit:      20,
+			MinScore:   m.config.ContextRelevanceThreshold,
+			Limit:      m.config.ContextKnowledgeLimit,
 		})
 		log.Printf("[Memory:BuildContext] Found %d knowledge results", len(knowledgeResults))
 	}
@@ -246,12 +251,12 @@ func (m *DefaultManager) BuildContext(ctx context.Context, sessionID, query stri
 			continue
 		}
 		// Include knowledge with sufficient score
-		if kr.Score > 0.5 {
+		if kr.Score > m.config.ContextRelevanceThreshold {
 			knowledgeParts = append(knowledgeParts, kr.Knowledge.Content)
 			log.Printf("[Memory:BuildContext] Include knowledge - ID=%s, Score=%.3f, Content='%s'",
 				kr.Knowledge.ID, kr.Score, truncateStr(kr.Knowledge.Content, 50))
-			if len(knowledgeParts) >= 8 {
-				log.Printf("[Memory:BuildContext] Reached max knowledge parts (8)")
+			if len(knowledgeParts) >= m.config.MaxKnowledgeInContext {
+				log.Printf("[Memory:BuildContext] Reached max knowledge parts (%d)", m.config.MaxKnowledgeInContext)
 				break
 			}
 		}
@@ -259,9 +264,9 @@ func (m *DefaultManager) BuildContext(ctx context.Context, sessionID, query stri
 
 	// 4. Build system message with knowledge
 	if len(knowledgeParts) > 0 {
-		contextContent := "已知用户信息:\n"
+		contextContent := constants.KnowledgeContextPrefix
 		for _, part := range knowledgeParts {
-			contextContent += "- " + part + "\n"
+			contextContent += constants.KnowledgeContextItem + part + "\n"
 		}
 		messages = append(messages, model.Message{
 			Role:    model.RoleSystem,
@@ -320,8 +325,8 @@ func (m *DefaultManager) ProcessConversation(ctx context.Context, sessionID, use
 		similar, err := m.SearchKnowledge(ctx, SearchOptions{
 			Query:      fact.Content,
 			ActiveOnly: true,
-			MinScore:   0.7,
-			Limit:      5,
+			MinScore:   m.config.SimilarKnowledgeThreshold,
+			Limit:      m.config.ConflictCheckLimit,
 		})
 		if err != nil {
 			log.Printf("[Knowledge:Process] Error searching similar: %v", err)

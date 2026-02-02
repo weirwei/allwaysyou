@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/allwaysyou/llm-agent/internal/config"
 	"github.com/allwaysyou/llm-agent/internal/model"
+	"github.com/allwaysyou/llm-agent/internal/pkg/constants"
 	"github.com/allwaysyou/llm-agent/internal/pkg/embedding"
 	"github.com/allwaysyou/llm-agent/internal/pkg/vector"
 	"github.com/allwaysyou/llm-agent/internal/repository"
@@ -19,6 +21,7 @@ type MemoryService struct {
 	sessionRepo   *repository.SessionRepository
 	vectorStore   *vector.VectorStore
 	embedProvider embedding.Provider
+	config        config.MemoryConfig
 }
 
 // NewMemoryService creates a new memory service
@@ -28,6 +31,7 @@ func NewMemoryService(
 	sessionRepo *repository.SessionRepository,
 	vectorStore *vector.VectorStore,
 	embedProvider embedding.Provider,
+	cfg config.MemoryConfig,
 ) *MemoryService {
 	return &MemoryService{
 		memoryRepo:    memoryRepo,
@@ -35,6 +39,7 @@ func NewMemoryService(
 		sessionRepo:   sessionRepo,
 		vectorStore:   vectorStore,
 		embedProvider: embedProvider,
+		config:        cfg,
 	}
 }
 
@@ -62,7 +67,7 @@ func (s *MemoryService) SearchMemories(ctx context.Context, query string, sessio
 	}
 
 	if limit <= 0 {
-		limit = 10
+		limit = s.config.DefaultSearchLimit
 	}
 
 	// Get query embedding
@@ -81,7 +86,7 @@ func (s *MemoryService) SearchMemories(ctx context.Context, query string, sessio
 	searchResults := make([]model.KnowledgeSearchResult, 0, len(results))
 	for _, r := range results {
 		// Only include knowledge documents
-		if r.Document.MetaData == nil || r.Document.MetaData.Role != "knowledge" {
+		if r.Document.MetaData == nil || r.Document.MetaData.Role != constants.RoleKnowledge {
 			continue
 		}
 

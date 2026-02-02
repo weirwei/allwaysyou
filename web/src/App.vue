@@ -209,8 +209,14 @@ onMounted(async () => {
 <template>
   <div class="sidebar">
     <div class="sidebar-header">
-      <h1>LLM Agent</h1>
-      <button class="new-chat-btn" @click="newChat">+ New Chat</button>
+      <h1>AllWaysYou</h1>
+      <button class="new-chat-btn" @click="newChat">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        New Chat
+      </button>
     </div>
 
     <div class="session-list">
@@ -254,8 +260,8 @@ onMounted(async () => {
       </template>
 
       <div v-else class="empty-state">
-        <h2>Welcome</h2>
-        <p>Start a conversation or select a previous chat</p>
+        <h2>Hello, I'm here to help</h2>
+        <p>Ask me anything or select a previous conversation to continue</p>
       </div>
     </div>
 
@@ -269,6 +275,10 @@ onMounted(async () => {
           rows="1"
         ></textarea>
         <button @click="sendMessage" :disabled="isLoading || !inputText.trim()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
           Send
         </button>
       </div>
@@ -280,7 +290,7 @@ onMounted(async () => {
     <div class="modal">
       <h2>Settings</h2>
 
-      <h3 style="margin-bottom: 15px; color: var(--text-secondary);">LLM Configurations</h3>
+      <h3>LLM Configurations</h3>
 
       <div class="config-list">
         <div
@@ -289,24 +299,27 @@ onMounted(async () => {
           class="config-item"
           :class="{ active: config.is_default }"
           @click="selectConfig(config.id)"
-          style="cursor: pointer;"
         >
           <div class="config-info">
-            <div class="config-name">{{ config.name }} {{ config.is_default ? '✓' : '' }}</div>
-            <div class="config-detail">{{ config.provider }} - {{ config.model }}</div>
+            <div class="config-name">{{ config.name }}</div>
+            <div class="config-detail">{{ config.provider }} · {{ config.model }}</div>
           </div>
           <div class="config-actions">
             <button class="btn-secondary" @click.stop="removeConfig(config.id)">Delete</button>
           </div>
         </div>
 
-        <p v-if="configs.length === 0" style="color: var(--text-secondary); text-align: center; padding: 20px;">
+        <p v-if="configs.length === 0" class="empty-config-text">
           No configurations yet. Add one to start chatting.
         </p>
       </div>
 
-      <button v-if="!showAddConfig" class="btn-primary" style="width: 100%;" @click="showAddConfig = true">
-        + Add Configuration
+      <button v-if="!showAddConfig" class="btn-primary btn-full" @click="showAddConfig = true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        Add Configuration
       </button>
 
       <template v-if="showAddConfig">
