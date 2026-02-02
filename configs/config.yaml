@@ -1,0 +1,24 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"  # debug, release, test
+
+database:
+  path: "./data/llm.db"
+
+vector:
+  path: "./data/chroma"
+  collection: "memories"
+
+encryption:
+  # Key should be set via environment variable: LLM_AGENT_ENCRYPTION_KEY
+  # Must be 32 bytes for AES-256
+  key: ""
+
+embedding:
+  provider: "openai"  # openai, local
+  model: "text-embedding-3-small"
+
+log:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json, text
