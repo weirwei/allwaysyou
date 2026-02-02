@@ -26,6 +26,13 @@ type Message struct {
 	Content string      `json:"content"`
 }
 
+// MessageWithID represents a chat message with its ID (used for API responses)
+type MessageWithID struct {
+	ID      string      `json:"id"`
+	Role    MessageRole `json:"role"`
+	Content string      `json:"content"`
+}
+
 // ChatRequest represents a chat completion request
 type ChatRequest struct {
 	SessionID string    `json:"session_id"` // Optional: continue existing session

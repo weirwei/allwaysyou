@@ -1,6 +1,7 @@
 const API_BASE = '/api/v1'
 
 export interface Message {
+  id?: string
   role: 'user' | 'assistant' | 'system'
   content: string
 }
@@ -33,6 +34,17 @@ export interface CreateConfigRequest {
   api_key: string
   base_url?: string
   model: string
+  max_tokens?: number
+  temperature?: number
+  is_default?: boolean
+}
+
+export interface UpdateConfigRequest {
+  name?: string
+  provider?: string
+  api_key?: string
+  base_url?: string
+  model?: string
   max_tokens?: number
   temperature?: number
   is_default?: boolean
@@ -87,13 +99,21 @@ export async function deleteConfig(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete config')
 }
 
-export async function setDefaultConfig(id: string): Promise<void> {
+export async function updateConfig(id: string, config: UpdateConfigRequest): Promise<LLMConfig> {
   const res = await fetch(`${API_BASE}/configs/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ is_default: true })
+    body: JSON.stringify(config)
   })
-  if (!res.ok) throw new Error('Failed to set default config')
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Failed to update config')
+  }
+  return res.json()
+}
+
+export async function setDefaultConfig(id: string): Promise<void> {
+  await updateConfig(id, { is_default: true })
 }
 
 // Session API
@@ -114,6 +134,11 @@ export async function deleteSession(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete session')
 }
 
+export async function deleteMessage(sessionId: string, messageId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/messages/${messageId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete message')
+}
+
 // Chat API
 export async function chat(request: ChatRequest): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chat`, {
@@ -128,7 +153,12 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
   return res.json()
 }
 
-export async function* chatStream(request: ChatRequest): AsyncGenerator<StreamChunk> {
+export interface StreamResult {
+  stream: AsyncGenerator<StreamChunk>
+  sessionId: string | null
+}
+
+export async function chatStream(request: ChatRequest): Promise<StreamResult> {
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -140,30 +170,39 @@ export async function* chatStream(request: ChatRequest): AsyncGenerator<StreamCh
     throw new Error(error.error || 'Chat failed')
   }
 
+  const sessionId = res.headers.get('X-Session-ID')
   const reader = res.body?.getReader()
   if (!reader) throw new Error('No response body')
 
   const decoder = new TextDecoder()
-  let buffer = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  async function* generateChunks(): AsyncGenerator<StreamChunk> {
+    let buffer = ''
 
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
+    while (true) {
+      const { done, value } = await reader!.read()
+      if (done) break
 
-    for (const line of lines) {
-      if (line.startsWith('event: message')) continue
-      if (line.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(line.slice(6))
-          yield data as StreamChunk
-        } catch {
-          // Skip invalid JSON
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('event: message')) continue
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+            yield data as StreamChunk
+          } catch {
+            // Skip invalid JSON
+          }
         }
       }
     }
+  }
+
+  return {
+    stream: generateChunks(),
+    sessionId
   }
 }

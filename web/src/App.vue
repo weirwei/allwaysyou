@@ -2,7 +2,7 @@
 import { ref, onMounted, nextTick, computed } from 'vue'
 import { marked } from 'marked'
 import * as api from './api'
-import type { Message, Session, LLMConfig, CreateConfigRequest } from './api'
+import type { Message, Session, LLMConfig, CreateConfigRequest, UpdateConfigRequest } from './api'
 
 // State
 const sessions = ref<Session[]>([])
@@ -13,6 +13,19 @@ const isLoading = ref(false)
 const showSettings = ref(false)
 const configs = ref<LLMConfig[]>([])
 const showAddConfig = ref(false)
+const editingConfigId = ref<string | null>(null)
+
+// Toast notification
+const toast = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
+let toastTimer: number | null = null
+
+function showToast(message: string, type: 'error' | 'success' | 'info' = 'error') {
+  toast.value = { message, type }
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => {
+    toast.value = null
+  }, 4000)
+}
 
 // New config form
 const newConfig = ref<CreateConfigRequest>({
@@ -78,6 +91,27 @@ async function deleteSession(id: string, event: Event) {
   }
 }
 
+async function deleteMessage(index: number) {
+  const msg = messages.value[index]
+  if (!msg) return
+
+  // For messages without ID (streaming messages not yet saved), just remove from UI
+  if (!msg.id) {
+    messages.value.splice(index, 1)
+    return
+  }
+
+  if (!currentSessionId.value) return
+
+  try {
+    await api.deleteMessage(currentSessionId.value, msg.id)
+    messages.value.splice(index, 1)
+  } catch (e) {
+    console.error('Failed to delete message:', e)
+    showToast('Failed to delete message')
+  }
+}
+
 function newChat() {
   currentSessionId.value = null
   messages.value = []
@@ -88,7 +122,7 @@ async function sendMessage() {
   if (!inputText.value.trim() || isLoading.value) return
 
   if (configs.value.length === 0) {
-    alert('Please add an LLM configuration first')
+    showToast('Please add an LLM configuration first', 'info')
     showSettings.value = true
     return
   }
@@ -101,18 +135,24 @@ async function sendMessage() {
 
   try {
     // Add placeholder for assistant message
-    const assistantMessage: Message = { role: 'assistant', content: '' }
-    messages.value.push(assistantMessage)
+    messages.value.push({ role: 'assistant', content: '' })
+    const assistantIndex = messages.value.length - 1
 
     // Stream response
-    const stream = api.chatStream({
+    const { stream, sessionId } = await api.chatStream({
       session_id: currentSessionId.value || undefined,
       messages: [userMessage]
     })
 
+    // Update session ID immediately if this is a new chat
+    if (sessionId && !currentSessionId.value) {
+      currentSessionId.value = sessionId
+    }
+
     for await (const chunk of stream) {
       if (chunk.delta) {
-        assistantMessage.content += chunk.delta
+        // Update through reactive array to ensure Vue detects changes
+        messages.value[assistantIndex].content += chunk.delta
         scrollToBottom()
       }
       if (chunk.done) {
@@ -122,42 +162,82 @@ async function sendMessage() {
 
     // Reload sessions to get the new/updated session
     await loadSessions()
-
-    // If this was a new chat, set the current session
-    if (!currentSessionId.value && sessions.value.length > 0) {
-      currentSessionId.value = sessions.value[0].id
-    }
   } catch (e: any) {
     console.error('Chat failed:', e)
     messages.value.pop() // Remove empty assistant message
-    alert(e.message || 'Failed to send message')
+    showToast(e.message || 'Failed to send message')
   } finally {
     isLoading.value = false
   }
 }
 
-async function addConfig() {
-  if (!newConfig.value.name || !newConfig.value.api_key) {
-    alert('Please fill in required fields')
+function resetConfigForm() {
+  newConfig.value = {
+    name: '',
+    provider: 'openai',
+    api_key: '',
+    base_url: '',
+    model: 'gpt-4o-mini',
+    max_tokens: 4096,
+    temperature: 0.7,
+    is_default: configs.value.length === 0
+  }
+  editingConfigId.value = null
+  showAddConfig.value = false
+}
+
+function editConfig(config: LLMConfig) {
+  editingConfigId.value = config.id
+  newConfig.value = {
+    name: config.name,
+    provider: config.provider,
+    api_key: '', // Don't show existing API key for security
+    base_url: config.base_url || '',
+    model: config.model,
+    max_tokens: config.max_tokens,
+    temperature: config.temperature,
+    is_default: config.is_default
+  }
+  showAddConfig.value = true
+}
+
+async function saveConfig() {
+  if (!newConfig.value.name) {
+    showToast('Please fill in the name field', 'info')
+    return
+  }
+
+  // For new config, API key is required
+  if (!editingConfigId.value && !newConfig.value.api_key) {
+    showToast('Please fill in the API key field', 'info')
     return
   }
 
   try {
-    await api.createConfig(newConfig.value)
-    await loadConfigs()
-    showAddConfig.value = false
-    newConfig.value = {
-      name: '',
-      provider: 'openai',
-      api_key: '',
-      base_url: '',
-      model: 'gpt-4o-mini',
-      max_tokens: 4096,
-      temperature: 0.7,
-      is_default: configs.value.length === 0
+    if (editingConfigId.value) {
+      // Update existing config
+      const updateData: UpdateConfigRequest = {
+        name: newConfig.value.name,
+        provider: newConfig.value.provider,
+        base_url: newConfig.value.base_url,
+        model: newConfig.value.model,
+        max_tokens: newConfig.value.max_tokens,
+        temperature: newConfig.value.temperature,
+        is_default: newConfig.value.is_default
+      }
+      // Only include API key if user entered a new one
+      if (newConfig.value.api_key) {
+        updateData.api_key = newConfig.value.api_key
+      }
+      await api.updateConfig(editingConfigId.value, updateData)
+    } else {
+      // Create new config
+      await api.createConfig(newConfig.value)
     }
+    await loadConfigs()
+    resetConfigForm()
   } catch (e: any) {
-    alert(e.message || 'Failed to add config')
+    showToast(e.message || 'Failed to save config')
   }
 }
 
@@ -244,12 +324,24 @@ onMounted(async () => {
       <template v-if="messages.length > 0">
         <div
           v-for="(msg, index) in messages"
-          :key="index"
-          class="message"
+          :key="msg.id || index"
+          class="message-wrapper"
           :class="msg.role"
         >
-          <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)"></div>
-          <template v-else>{{ msg.content }}</template>
+          <div class="message" :class="msg.role">
+            <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)"></div>
+            <template v-else>{{ msg.content }}</template>
+          </div>
+          <button
+            class="message-delete-btn"
+            @click="deleteMessage(index)"
+            title="Delete message"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
         </div>
 
         <div v-if="isLoading && !messages[messages.length - 1]?.content" class="typing-indicator">
@@ -301,11 +393,25 @@ onMounted(async () => {
           @click="selectConfig(config.id)"
         >
           <div class="config-info">
-            <div class="config-name">{{ config.name }}</div>
+            <div class="config-name">
+              {{ config.name }}
+              <span v-if="config.is_default" class="default-badge">Default</span>
+            </div>
             <div class="config-detail">{{ config.provider }} · {{ config.model }}</div>
           </div>
           <div class="config-actions">
-            <button class="btn-secondary" @click.stop="removeConfig(config.id)">Delete</button>
+            <button class="btn-icon" @click.stop="editConfig(config)" title="Edit">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </button>
+            <button class="btn-icon btn-danger" @click.stop="removeConfig(config.id)" title="Delete">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -314,15 +420,19 @@ onMounted(async () => {
         </p>
       </div>
 
-      <button v-if="!showAddConfig" class="btn-primary btn-full" @click="showAddConfig = true">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
-        Add Configuration
+      <button v-if="!showAddConfig" class="btn-add-config" @click="showAddConfig = true; editingConfigId = null">
+        <span class="icon-wrapper">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </span>
+        Add New Configuration
       </button>
 
       <template v-if="showAddConfig">
+        <h4 class="form-title">{{ editingConfigId ? 'Edit Configuration' : 'Add Configuration' }}</h4>
+
         <div class="form-group">
           <label>Name *</label>
           <input v-model="newConfig.name" placeholder="My OpenAI Config" />
@@ -339,8 +449,8 @@ onMounted(async () => {
         </div>
 
         <div class="form-group">
-          <label>API Key *</label>
-          <input v-model="newConfig.api_key" type="password" placeholder="sk-..." />
+          <label>API Key {{ editingConfigId ? '(leave empty to keep current)' : '*' }}</label>
+          <input v-model="newConfig.api_key" type="password" :placeholder="editingConfigId ? '••••••••' : 'sk-...'" />
         </div>
 
         <div class="form-group">
@@ -363,9 +473,16 @@ onMounted(async () => {
           <input v-model.number="newConfig.temperature" type="number" step="0.1" min="0" max="2" />
         </div>
 
+        <div class="form-group" v-if="!editingConfigId || !configs.find(c => c.id === editingConfigId)?.is_default">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="newConfig.is_default" />
+            <span>Set as default configuration</span>
+          </label>
+        </div>
+
         <div class="modal-actions">
-          <button class="btn-secondary" @click="showAddConfig = false">Cancel</button>
-          <button class="btn-primary" @click="addConfig">Save</button>
+          <button class="btn-secondary" @click="resetConfigForm">Cancel</button>
+          <button class="btn-primary" @click="saveConfig">{{ editingConfigId ? 'Update' : 'Save' }}</button>
         </div>
       </template>
 
@@ -374,4 +491,28 @@ onMounted(async () => {
       </div>
     </div>
   </div>
+
+  <!-- Toast Notification -->
+  <Transition name="toast">
+    <div v-if="toast" class="toast" :class="toast.type">
+      <span class="toast-icon">
+        <svg v-if="toast.type === 'error'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+        <svg v-else-if="toast.type === 'success'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      </span>
+      <span class="toast-message">{{ toast.message }}</span>
+      <button class="toast-close" @click="toast = null">&times;</button>
+    </div>
+  </Transition>
 </template>

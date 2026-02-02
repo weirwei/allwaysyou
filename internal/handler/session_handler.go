@@ -65,9 +65,10 @@ func (h *SessionHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	messages := make([]model.Message, len(memories))
+	messages := make([]model.MessageWithID, len(memories))
 	for i, m := range memories {
-		messages[i] = model.Message{
+		messages[i] = model.MessageWithID{
+			ID:      m.ID,
 			Role:    m.Role,
 			Content: m.Content,
 		}
@@ -92,6 +93,36 @@ func (h *SessionHandler) Delete(c *gin.Context) {
 
 	// Delete session
 	if err := h.sessionRepo.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// DeleteMessage deletes a single message from a session
+// DELETE /api/v1/sessions/:id/messages/:messageId
+func (h *SessionHandler) DeleteMessage(c *gin.Context) {
+	sessionID := c.Param("id")
+	messageID := c.Param("messageId")
+
+	// Verify the message belongs to this session
+	memory, err := h.memoryRepo.GetByID(messageID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if memory == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "message not found"})
+		return
+	}
+	if memory.SessionID != sessionID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message does not belong to this session"})
+		return
+	}
+
+	// Delete the message
+	if err := h.memoryRepo.Delete(messageID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

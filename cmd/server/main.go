@@ -160,6 +160,7 @@ func main() {
 			sessions.GET("", sessionHandler.GetAll)
 			sessions.GET("/:id", sessionHandler.GetByID)
 			sessions.DELETE("/:id", sessionHandler.Delete)
+			sessions.DELETE("/:id/messages/:messageId", sessionHandler.DeleteMessage)
 			sessions.POST("/:id/summarize", memoryHandler.Summarize)
 		}
 
