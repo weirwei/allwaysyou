@@ -110,3 +110,85 @@ func (p *OpenAIProvider) GetEmbeddings(ctx context.Context, texts []string) ([][
 
 	return embeddings, nil
 }
+
+// OllamaProvider implements embedding using Ollama API
+type OllamaProvider struct {
+	baseURL string
+	model   string
+	client  *http.Client
+}
+
+// NewOllamaProvider creates a new Ollama embedding provider
+func NewOllamaProvider(baseURL, model string) *OllamaProvider {
+	if baseURL == "" {
+		baseURL = "http://localhost:11434"
+	}
+	if model == "" {
+		model = "nomic-embed-text"
+	}
+	return &OllamaProvider{
+		baseURL: strings.TrimSuffix(baseURL, "/"),
+		model:   model,
+		client:  &http.Client{},
+	}
+}
+
+type ollamaEmbeddingRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+}
+
+type ollamaEmbeddingResponse struct {
+	Embedding []float32 `json:"embedding"`
+}
+
+// GetEmbedding gets the embedding for a single text
+func (p *OllamaProvider) GetEmbedding(ctx context.Context, text string) ([]float32, error) {
+	reqBody := ollamaEmbeddingRequest{
+		Model:  p.model,
+		Prompt: text,
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/api/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var embResp ollamaEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return embResp.Embedding, nil
+}
+
+// GetEmbeddings gets embeddings for multiple texts
+func (p *OllamaProvider) GetEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+	embeddings := make([][]float32, len(texts))
+	for i, text := range texts {
+		emb, err := p.GetEmbedding(ctx, text)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get embedding for text %d: %w", i, err)
+		}
+		embeddings[i] = emb
+	}
+	return embeddings, nil
+}

@@ -172,6 +172,15 @@ async function removeConfig(id: string) {
   }
 }
 
+async function selectConfig(id: string) {
+  try {
+    await api.setDefaultConfig(id)
+    await loadConfigs()
+  } catch (e) {
+    console.error('Failed to set default config:', e)
+  }
+}
+
 function scrollToBottom() {
   nextTick(() => {
     if (chatContainer.value) {
@@ -279,13 +288,15 @@ onMounted(async () => {
           :key="config.id"
           class="config-item"
           :class="{ active: config.is_default }"
+          @click="selectConfig(config.id)"
+          style="cursor: pointer;"
         >
           <div class="config-info">
-            <div class="config-name">{{ config.name }}</div>
+            <div class="config-name">{{ config.name }} {{ config.is_default ? '✓' : '' }}</div>
             <div class="config-detail">{{ config.provider }} - {{ config.model }}</div>
           </div>
           <div class="config-actions">
-            <button class="btn-secondary" @click="removeConfig(config.id)">Delete</button>
+            <button class="btn-secondary" @click.stop="removeConfig(config.id)">Delete</button>
           </div>
         </div>
 

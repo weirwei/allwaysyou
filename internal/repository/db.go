@@ -36,6 +36,7 @@ func NewDB(dbPath string) (*DB, error) {
 		&model.LLMConfig{},
 		&model.Session{},
 		&model.Memory{},
+		&model.Knowledge{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}

@@ -16,8 +16,9 @@ encryption:
   key: ""
 
 embedding:
-  provider: "openai"  # openai, local
-  model: "text-embedding-3-small"
+  provider: "ollama"  # openai, ollama
+  model: "nomic-embed-text"  # ollama: nomic-embed-text, mxbai-embed-large; openai: text-embedding-3-small
+  base_url: "http://localhost:11434"  # ollama base url
 
 log:
   level: "info"  # debug, info, warn, error

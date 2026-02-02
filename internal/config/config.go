@@ -39,6 +39,7 @@ type EncryptionConfig struct {
 type EmbeddingConfig struct {
 	Provider string `mapstructure:"provider"`
 	Model    string `mapstructure:"model"`
+	BaseURL  string `mapstructure:"base_url"`
 }
 
 type LogConfig struct {

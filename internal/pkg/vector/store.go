@@ -10,18 +10,38 @@ import (
 	"sync"
 )
 
+// DocumentMetadata represents structured metadata for a document
+type DocumentMetadata struct {
+	SessionID  string  `json:"session_id"`
+	Role       string  `json:"role"`
+	Category   string  `json:"category"`
+	Source     string  `json:"source"`
+	Importance float32 `json:"importance"`
+	IsActive   bool    `json:"is_active"` // 是否有效(未被取代)
+	CreatedAt  int64   `json:"created_at"`
+}
+
 // Document represents a document with its embedding
 type Document struct {
 	ID        string            `json:"id"`
 	Content   string            `json:"content"`
 	Embedding []float32         `json:"embedding"`
-	Metadata  map[string]string `json:"metadata"`
+	Metadata  map[string]string `json:"metadata"`            // 保持向后兼容
+	MetaData  *DocumentMetadata `json:"meta_data,omitempty"` // 新的结构化元数据
 }
 
 // SearchResult represents a search result with similarity score
 type SearchResult struct {
 	Document Document `json:"document"`
 	Score    float32  `json:"score"`
+}
+
+// SearchFilter represents advanced search filter options
+type SearchFilter struct {
+	SessionID  string   // 按会话过滤
+	Categories []string // 按类别过滤
+	ActiveOnly bool     // 仅返回有效记忆
+	MinScore   float32  // 最低相似度
 }
 
 // VectorStore is an in-memory vector store with persistence
@@ -149,6 +169,110 @@ func (s *VectorStore) Search(queryEmbedding []float32, limit int, filter map[str
 	}
 
 	return results
+}
+
+// SearchWithFilter performs a similarity search with advanced filtering
+func (s *VectorStore) SearchWithFilter(queryEmbedding []float32, limit int, filter *SearchFilter) []SearchResult {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	var results []SearchResult
+
+	for _, doc := range s.documents {
+		// Apply structured filter
+		if filter != nil {
+			// Check active only (using new MetaData or fallback to old metadata)
+			if filter.ActiveOnly {
+				if doc.MetaData != nil && !doc.MetaData.IsActive {
+					continue
+				}
+				// Fallback: check old metadata for is_active
+				if doc.MetaData == nil && doc.Metadata["is_active"] == "false" {
+					continue
+				}
+			}
+
+			// Check session ID
+			if filter.SessionID != "" {
+				sessionID := ""
+				if doc.MetaData != nil {
+					sessionID = doc.MetaData.SessionID
+				} else {
+					sessionID = doc.Metadata["session_id"]
+				}
+				if sessionID != filter.SessionID {
+					continue
+				}
+			}
+
+			// Check categories
+			if len(filter.Categories) > 0 {
+				category := ""
+				if doc.MetaData != nil {
+					category = doc.MetaData.Category
+				} else {
+					category = doc.Metadata["category"]
+				}
+				found := false
+				for _, c := range filter.Categories {
+					if c == category {
+						found = true
+						break
+					}
+				}
+				if !found {
+					continue
+				}
+			}
+		}
+
+		score := cosineSimilarity(queryEmbedding, doc.Embedding)
+
+		// Check minimum score
+		if filter != nil && filter.MinScore > 0 && score < filter.MinScore {
+			continue
+		}
+
+		results = append(results, SearchResult{
+			Document: doc,
+			Score:    score,
+		})
+	}
+
+	// Sort by score descending
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	// Limit results
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results
+}
+
+// UpdateMetadata updates the metadata of a document
+func (s *VectorStore) UpdateMetadata(id string, metadata *DocumentMetadata) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	doc, ok := s.documents[id]
+	if !ok {
+		return fmt.Errorf("document not found: %s", id)
+	}
+
+	doc.MetaData = metadata
+	// Also update old metadata for backward compatibility
+	if doc.Metadata == nil {
+		doc.Metadata = make(map[string]string)
+	}
+	doc.Metadata["is_active"] = fmt.Sprintf("%v", metadata.IsActive)
+	doc.Metadata["category"] = metadata.Category
+	doc.Metadata["source"] = metadata.Source
+
+	s.documents[id] = doc
+	return s.save()
 }
 
 // Count returns the number of documents

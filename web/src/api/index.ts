@@ -87,6 +87,15 @@ export async function deleteConfig(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete config')
 }
 
+export async function setDefaultConfig(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/configs/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_default: true })
+  })
+  if (!res.ok) throw new Error('Failed to set default config')
+}
+
 // Session API
 export async function getSessions(): Promise<Session[]> {
   const res = await fetch(`${API_BASE}/sessions`)

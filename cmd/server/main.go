@@ -15,6 +15,7 @@ import (
 	"github.com/allwaysyou/llm-agent/internal/model"
 	"github.com/allwaysyou/llm-agent/internal/pkg/crypto"
 	"github.com/allwaysyou/llm-agent/internal/pkg/embedding"
+	"github.com/allwaysyou/llm-agent/internal/pkg/memory"
 	"github.com/allwaysyou/llm-agent/internal/pkg/vector"
 	"github.com/allwaysyou/llm-agent/internal/repository"
 	"github.com/allwaysyou/llm-agent/internal/service"
@@ -64,6 +65,7 @@ func main() {
 	configRepo := repository.NewConfigRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
 	memoryRepo := repository.NewMemoryRepository(db)
+	knowledgeRepo := repository.NewKnowledgeRepository(db)
 
 	// Initialize adapter factory with all providers
 	adapterFactory := adapter.NewAdapterFactory()
@@ -74,19 +76,31 @@ func main() {
 	// Initialize config service first (needed for embedding provider)
 	configService := service.NewConfigService(configRepo, encryptor)
 
-	// Initialize embedding provider (will be nil if no config available)
+	// Initialize embedding provider based on config
 	var embedProvider embedding.Provider
-	defaultConfig, _ := configService.GetDefault()
-	if defaultConfig != nil {
-		apiKey, err := configService.DecryptAPIKey(defaultConfig.APIKey)
-		if err == nil {
-			embedProvider = embedding.NewOpenAIProvider(apiKey, defaultConfig.BaseURL, cfg.Embedding.Model)
+	switch cfg.Embedding.Provider {
+	case "ollama":
+		embedProvider = embedding.NewOllamaProvider(cfg.Embedding.BaseURL, cfg.Embedding.Model)
+		log.Printf("Using Ollama embedding provider (model: %s, url: %s)", cfg.Embedding.Model, cfg.Embedding.BaseURL)
+	case "openai":
+		defaultConfig, _ := configService.GetDefault()
+		if defaultConfig != nil {
+			apiKey, err := configService.DecryptAPIKey(defaultConfig.APIKey)
+			if err == nil {
+				embedProvider = embedding.NewOpenAIProvider(apiKey, defaultConfig.BaseURL, cfg.Embedding.Model)
+				log.Printf("Using OpenAI embedding provider (model: %s)", cfg.Embedding.Model)
+			}
 		}
+	default:
+		log.Printf("No embedding provider configured (provider: %s)", cfg.Embedding.Provider)
 	}
 
+	// Initialize memory manager (new architecture)
+	memoryManager := memory.NewManager(memoryRepo, knowledgeRepo, vectorStore, embedProvider)
+
 	// Initialize services
-	memoryService := service.NewMemoryService(memoryRepo, sessionRepo, vectorStore, embedProvider)
-	chatService := service.NewChatService(configService, sessionRepo, memoryRepo, adapterFactory)
+	memoryService := service.NewMemoryService(memoryRepo, knowledgeRepo, sessionRepo, vectorStore, embedProvider)
+	chatService := service.NewChatService(configService, sessionRepo, memoryManager, adapterFactory)
 	summarizeService := service.NewSummarizeService(sessionRepo, memoryRepo, configService, adapterFactory)
 
 	// Initialize handlers
