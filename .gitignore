@@ -1,0 +1,41 @@
+.runtime/
+.claude/
+.beads/
+.logs/
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+llm-agent
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+tmp/

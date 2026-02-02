@@ -1,0 +1,48 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"
+
+auth:
+  enabled: false
+  jwt_secret: "${JWT_SECRET}"
+  token_expiry: "24h"
+
+providers:
+  openai:
+    type: "openai"
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    timeout: 60
+  claude:
+    type: "claude"
+    api_key: "${CLAUDE_API_KEY}"
+    base_url: "https://api.anthropic.com"
+    model: "claude-3-opus-20240229"
+    timeout: 60
+
+memory:
+  working:
+    max_messages: 20
+    ttl: "1h"
+  episodic:
+    retention_days: 365
+  semantic:
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.7
+    max_results: 10
+
+database:
+  postgres:
+    host: "${DB_HOST:localhost}"
+    port: 5432
+    user: "${DB_USER:agent}"
+    password: "${DB_PASSWORD:}"
+    database: "llm_agent"
+    sslmode: "disable"
+  redis:
+    host: "${REDIS_HOST:localhost}"
+    port: 6379
+    password: "${REDIS_PASSWORD:}"
+    db: 0
