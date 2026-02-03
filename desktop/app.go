@@ -19,6 +19,7 @@ import (
 	"github.com/allwaysyou/llm-agent/internal/repository"
 	"github.com/allwaysyou/llm-agent/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -45,6 +46,19 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.server != nil {
 		a.server.Shutdown(ctx)
 	}
+}
+
+// Window control methods for custom title bar
+func (a *App) Minimize() {
+	runtime.WindowMinimise(a.ctx)
+}
+
+func (a *App) Maximize() {
+	runtime.WindowToggleMaximise(a.ctx)
+}
+
+func (a *App) Close() {
+	runtime.Quit(a.ctx)
 }
 
 // getDataDir returns the application data directory

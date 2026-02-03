@@ -24,11 +24,13 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
+		BackgroundColour: &options.RGBA{R: 26, G: 27, B: 38, A: 255}, // #1a1b26 - matches app dark theme
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		Frameless: true,
 		Mac: &mac.Options{
-			TitleBar: mac.TitleBarHiddenInset(),
+			WebviewIsTransparent: false,
+			WindowIsTranslucent:  false,
 			About: &mac.AboutInfo{
 				Title:   "AllWaysYou",
 				Message: "Private LLM Agent with Long-term Memory",

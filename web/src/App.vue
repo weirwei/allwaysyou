@@ -14,6 +14,44 @@ const showSettings = ref(false)
 const configs = ref<LLMConfig[]>([])
 const showAddConfig = ref(false)
 const editingConfigId = ref<string | null>(null)
+const sidebarCollapsed = ref(false)
+const sidebarWidth = ref(280)
+const isResizing = ref(false)
+
+// Sidebar resize
+function startResize(e: MouseEvent) {
+  isResizing.value = true
+  document.addEventListener('mousemove', handleResize)
+  document.addEventListener('mouseup', stopResize)
+}
+
+function handleResize(e: MouseEvent) {
+  if (!isResizing.value) return
+  const newWidth = e.clientX
+  if (newWidth >= 200 && newWidth <= 400) {
+    sidebarWidth.value = newWidth
+  }
+}
+
+function stopResize() {
+  isResizing.value = false
+  document.removeEventListener('mousemove', handleResize)
+  document.removeEventListener('mouseup', stopResize)
+}
+
+// Window control functions
+function windowClose() {
+  (window as any).go?.main?.App?.Close?.()
+}
+
+function windowMinimize() {
+  (window as any).go?.main?.App?.Minimize?.()
+}
+
+function windowMaximize() {
+  (window as any).go?.main?.App?.Maximize?.()
+}
+
 
 // Toast notification
 const toast = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
@@ -287,39 +325,74 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <h1>AllWaysYou</h1>
-      <button class="new-chat-btn" @click="newChat">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
-        New Chat
-      </button>
-    </div>
-
-    <div class="session-list">
-      <div
-        v-for="session in sessions"
-        :key="session.id"
-        class="session-item"
-        :class="{ active: session.id === currentSessionId }"
-        @click="selectSession(session)"
-      >
-        <span class="session-title">{{ session.title || 'New Chat' }}</span>
-        <button class="delete-btn" @click="deleteSession(session.id, $event)">
-          &times;
+  <div class="app-container" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+    <!-- Sidebar -->
+    <div class="sidebar" :style="{ width: sidebarCollapsed ? '72px' : sidebarWidth + 'px' }">
+      <!-- Title bar area -->
+      <div class="sidebar-titlebar">
+        <div v-if="!sidebarCollapsed" class="window-controls">
+          <button class="window-btn close" @click="windowClose" title="Close"></button>
+          <button class="window-btn minimize" @click="windowMinimize" title="Minimize"></button>
+          <button class="window-btn maximize" @click="windowMaximize" title="Maximize"></button>
+        </div>
+        <button class="sidebar-toggle" @click="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? 'Expand' : 'Collapse'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="9" y1="3" x2="9" y2="21"></line>
+            <polyline v-if="sidebarCollapsed" points="14 9 17 12 14 15"></polyline>
+            <polyline v-else points="17 9 14 12 17 15"></polyline>
+          </svg>
         </button>
       </div>
+
+      <div class="sidebar-content">
+        <div class="sidebar-header">
+          <h1 v-if="!sidebarCollapsed">AllWaysYou</h1>
+          <button class="new-chat-btn" @click="newChat" :title="sidebarCollapsed ? 'New Chat' : ''">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span v-if="!sidebarCollapsed">New Chat</span>
+          </button>
+        </div>
+
+        <div class="session-list">
+          <div
+            v-for="session in sessions"
+            :key="session.id"
+            class="session-item"
+            :class="{ active: session.id === currentSessionId }"
+            @click="selectSession(session)"
+            :title="sidebarCollapsed ? (session.title || 'New Chat') : ''"
+          >
+            <span class="session-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </span>
+            <span class="session-title" v-if="!sidebarCollapsed">{{ session.title || 'New Chat' }}</span>
+            <button class="delete-btn" v-if="!sidebarCollapsed" @click="deleteSession(session.id, $event)">
+              &times;
+            </button>
+          </div>
+        </div>
+
+        <button class="settings-btn" @click="showSettings = true" :title="sidebarCollapsed ? 'Settings' : ''">
+          <span v-if="!sidebarCollapsed">Settings</span>
+        </button>
+      </div>
+
+      <!-- Resize handle -->
+      <div
+        v-if="!sidebarCollapsed"
+        class="sidebar-resize-handle"
+        @mousedown="startResize"
+      ></div>
     </div>
 
-    <button class="settings-btn" @click="showSettings = true">
-      Settings
-    </button>
-  </div>
-
-  <div class="main-content">
+    <!-- Main content -->
+    <div class="main-content">
     <div ref="chatContainer" class="chat-container">
       <template v-if="messages.length > 0">
         <div
@@ -375,16 +448,25 @@ onMounted(async () => {
         </button>
       </div>
     </div>
+    </div>
   </div>
 
   <!-- Settings Modal -->
   <div v-if="showSettings" class="modal-overlay" @click.self="showSettings = false">
     <div class="modal">
-      <h2>Settings</h2>
+      <h2 v-if="!showAddConfig">Settings</h2>
+      <h2 v-else class="modal-header-with-back">
+        <button class="back-btn" @click="resetConfigForm" title="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        {{ editingConfigId ? 'Edit Configuration' : 'Add Configuration' }}
+      </h2>
 
-      <h3>LLM Configurations</h3>
+      <h3 v-if="!showAddConfig">LLM Configurations</h3>
 
-      <div class="config-list">
+      <div v-if="!showAddConfig" class="config-list">
         <div
           v-for="config in configs"
           :key="config.id"
@@ -431,8 +513,6 @@ onMounted(async () => {
       </button>
 
       <template v-if="showAddConfig">
-        <h4 class="form-title">{{ editingConfigId ? 'Edit Configuration' : 'Add Configuration' }}</h4>
-
         <div class="form-group">
           <label>Name *</label>
           <input v-model="newConfig.name" placeholder="My OpenAI Config" />
