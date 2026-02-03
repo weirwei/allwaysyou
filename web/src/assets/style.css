@@ -104,6 +104,21 @@ body {
   overflow: hidden;
 }
 
+/* macOS Desktop App - Window Controls Spacing */
+.sidebar-header {
+  padding-top: calc(var(--space-lg) + 32px) !important;
+  -webkit-app-region: drag;
+}
+
+.sidebar-header h1,
+.sidebar-header .new-chat-btn {
+  -webkit-app-region: no-drag;
+}
+
+.main-content {
+  padding-top: 32px;
+}
+
 /* ========================================
    Sidebar
    ======================================== */

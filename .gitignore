@@ -53,4 +53,12 @@ temp/
 web/dist/
 web/node_modules/
 
+# Desktop build (Wails)
+desktop/build/
+desktop/frontend/dist/
+desktop/frontend/node_modules/
+desktop/frontend/wailsjs/
+desktop/frontend/package-lock.json
+desktop/frontend/*.md5
+
 .spec-workflow/

@@ -1,4 +1,7 @@
-const API_BASE = '/api/v1'
+// Detect Wails environment (dev mode uses port 34115, production embeds frontend)
+const isWailsEnv = typeof window !== 'undefined' &&
+  (window.location.port === '34115' || (window as any).go !== undefined)
+const API_BASE = isWailsEnv ? 'http://127.0.0.1:18080/api/v1' : '/api/v1'
 
 export interface Message {
   id?: string

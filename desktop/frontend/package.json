@@ -1,0 +1,9 @@
+{
+  "name": "allwaysyou-desktop-frontend",
+  "version": "1.0.0",
+  "scripts": {
+    "install": "cd ../../web && npm install",
+    "build": "cd ../../web && npm run build && cp -r dist ../desktop/frontend/",
+    "dev": "cd ../../web && npm run dev"
+  }
+}

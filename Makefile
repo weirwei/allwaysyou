@@ -1,4 +1,4 @@
-.PHONY: build run clean test deps
+.PHONY: build run clean test deps desktop-deps desktop-dev desktop-build desktop-build-arm desktop-build-intel
 
 # Binary name
 BINARY_NAME=llm-agent
@@ -50,3 +50,19 @@ docker-build:
 # Docker run
 docker-run:
 	docker run -p 8080:8080 $(BINARY_NAME)
+
+# Desktop app (Wails)
+desktop-deps:
+	cd desktop && go mod tidy
+
+desktop-dev:
+	cd desktop && wails dev
+
+desktop-build:
+	cd desktop && wails build -platform darwin/universal
+
+desktop-build-arm:
+	cd desktop && wails build -platform darwin/arm64
+
+desktop-build-intel:
+	cd desktop && wails build -platform darwin/amd64
