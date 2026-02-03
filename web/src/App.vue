@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { marked } from 'marked'
 import * as api from './api'
 import type { Message, Session, LLMConfig, CreateConfigRequest, UpdateConfigRequest } from './api'
@@ -95,6 +95,47 @@ function windowMaximize() {
   (window as any).go?.main?.App?.Maximize?.()
 }
 
+// Global keyboard shortcuts
+function handleGlobalKeydown(e: KeyboardEvent) {
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+  const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey
+
+  if (cmdOrCtrl) {
+    switch (e.key.toLowerCase()) {
+      case 'w': // Close window
+        e.preventDefault()
+        windowClose()
+        break
+      case 'm': // Minimize
+        e.preventDefault()
+        windowMinimize()
+        break
+      case 'n': // New chat
+        e.preventDefault()
+        newChat()
+        break
+      case ',': // Open settings
+        e.preventDefault()
+        showSettings.value = true
+        break
+      case 'b': // Toggle sidebar
+        e.preventDefault()
+        sidebarCollapsed.value = !sidebarCollapsed.value
+        break
+    }
+  }
+
+  // Escape to close modal
+  if (e.key === 'Escape') {
+    if (showSettings.value) {
+      if (showAddConfig.value) {
+        resetConfigForm()
+      } else {
+        showSettings.value = false
+      }
+    }
+  }
+}
 
 // Toast notification
 const toast = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
@@ -366,7 +407,14 @@ function handleKeydown(e: KeyboardEvent) {
 // Lifecycle
 onMounted(async () => {
   loadTheme()
+  // Add global keyboard shortcut listener
+  window.addEventListener('keydown', handleGlobalKeydown)
   await Promise.all([loadSessions(), loadConfigs()])
+})
+
+// Cleanup on unmount
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
 })
 </script>
 
@@ -383,17 +431,7 @@ onMounted(async () => {
         <!-- Brand row: logo + name + toggle -->
         <div class="sidebar-brand">
           <div class="brand-logo">
-            <svg width="32" height="32" viewBox="0 0 100 100">
-              <defs>
-                <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#6366F1"/>
-                  <stop offset="100%" stop-color="#06B6D4"/>
-                </linearGradient>
-              </defs>
-              <rect width="100" height="100" rx="20" fill="url(#logoGradient)"/>
-              <path d="M30 65 L50 35 L70 65" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-              <circle cx="50" cy="70" r="5" fill="white"/>
-            </svg>
+            <img src="./assets/logo.svg" alt="AllWaysYou" width="32" height="32" />
           </div>
           <span v-if="!sidebarCollapsed" class="brand-name">AllWaysYou</span>
           <button class="sidebar-toggle" @click.stop="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? 'Expand' : 'Collapse'">
@@ -481,6 +519,7 @@ onMounted(async () => {
       </template>
 
       <div v-else class="empty-state">
+        <img src="./assets/logo.svg" alt="AllWaysYou" class="empty-state-logo" />
         <h2>Hello, I'm here to help</h2>
         <p>Ask me anything or select a previous conversation to continue</p>
       </div>

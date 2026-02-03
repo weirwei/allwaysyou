@@ -963,20 +963,17 @@ body {
 }
 
 /* AI Logo Animation */
-.empty-state::before {
-  content: '';
-  width: 80px;
-  height: 80px;
+.empty-state-logo {
+  width: 120px;
+  height: 120px;
   margin-bottom: var(--space-xl);
-  background: linear-gradient(135deg, var(--ai-accent) 0%, var(--cyan-accent) 100%);
-  border-radius: var(--radius-xl);
   animation: logoFloat 3s ease-in-out infinite;
-  box-shadow: var(--shadow-glow);
+  filter: drop-shadow(0 4px 20px rgba(99, 102, 241, 0.3));
 }
 
 @keyframes logoFloat {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-10px) rotate(5deg); }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 
 /* ========================================
