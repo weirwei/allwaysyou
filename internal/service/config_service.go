@@ -42,6 +42,7 @@ func (s *ConfigService) Create(req *model.CreateLLMConfigRequest) (*model.LLMCon
 		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
 		IsDefault:   req.IsDefault,
+		ConfigType:  req.ConfigType,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -52,6 +53,9 @@ func (s *ConfigService) Create(req *model.CreateLLMConfigRequest) (*model.LLMCon
 	}
 	if config.Temperature == 0 {
 		config.Temperature = 0.7
+	}
+	if config.ConfigType == "" {
+		config.ConfigType = model.ConfigTypeChat
 	}
 
 	if err := s.repo.Create(config); err != nil {
@@ -78,9 +82,19 @@ func (s *ConfigService) GetAll() ([]model.LLMConfig, error) {
 	return s.repo.GetAll()
 }
 
-// GetDefault retrieves the default config
+// GetDefault retrieves the default config (for backward compatibility, returns chat type)
 func (s *ConfigService) GetDefault() (*model.LLMConfig, error) {
 	return s.repo.GetDefault()
+}
+
+// GetByType retrieves all configs of a specific type
+func (s *ConfigService) GetByType(configType model.ConfigType) ([]model.LLMConfig, error) {
+	return s.repo.GetByType(configType)
+}
+
+// GetDefaultByType retrieves the default config for a specific type
+func (s *ConfigService) GetDefaultByType(configType model.ConfigType) (*model.LLMConfig, error) {
+	return s.repo.GetDefaultByType(configType)
 }
 
 // Update updates a config

@@ -65,9 +65,9 @@ func (h *MemoryHandler) Summarize(c *gin.Context) {
 // POST /api/v1/memories
 func (h *MemoryHandler) Create(c *gin.Context) {
 	var req struct {
-		SessionID string          `json:"session_id" binding:"required"`
+		SessionID string            `json:"session_id" binding:"required"`
 		Role      model.MessageRole `json:"role" binding:"required"`
-		Content   string          `json:"content" binding:"required"`
+		Content   string            `json:"content" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -82,4 +82,94 @@ func (h *MemoryHandler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, memory)
+}
+
+// GetAllKnowledge returns all knowledge entries
+// GET /api/v1/knowledge?active_only=true&limit=100
+func (h *MemoryHandler) GetAllKnowledge(c *gin.Context) {
+	activeOnly := c.DefaultQuery("active_only", "true") == "true"
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+
+	knowledge, err := h.memoryService.GetAllKnowledge(c.Request.Context(), activeOnly, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, knowledge)
+}
+
+// GetKnowledge returns a single knowledge entry
+// GET /api/v1/knowledge/:id
+func (h *MemoryHandler) GetKnowledge(c *gin.Context) {
+	id := c.Param("id")
+
+	knowledge, err := h.memoryService.GetKnowledge(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if knowledge == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "knowledge not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, knowledge)
+}
+
+// CreateKnowledge creates a new knowledge entry
+// POST /api/v1/knowledge
+func (h *MemoryHandler) CreateKnowledge(c *gin.Context) {
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	knowledge, err := h.memoryService.CreateKnowledge(c.Request.Context(), req.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, knowledge)
+}
+
+// UpdateKnowledge updates a knowledge entry
+// PUT /api/v1/knowledge/:id
+func (h *MemoryHandler) UpdateKnowledge(c *gin.Context) {
+	id := c.Param("id")
+
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	knowledge, err := h.memoryService.UpdateKnowledge(c.Request.Context(), id, req.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, knowledge)
+}
+
+// DeleteKnowledge deletes a knowledge entry
+// DELETE /api/v1/knowledge/:id
+func (h *MemoryHandler) DeleteKnowledge(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := h.memoryService.DeleteKnowledge(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "knowledge deleted"})
 }

@@ -163,21 +163,40 @@ func (a *App) startServer() {
 	adapterFactory.Register(model.ProviderOpenAI, adapter.NewOpenAIAdapter)
 	adapterFactory.Register(model.ProviderClaude, adapter.NewClaudeAdapter)
 	adapterFactory.Register(model.ProviderAzure, adapter.NewAzureAdapter)
+	adapterFactory.Register(model.ProviderOllama, adapter.NewOllamaAdapter)
 
 	// Initialize config service
 	configService := service.NewConfigService(configRepo, encryptor)
 
 	// Initialize embedding provider
 	var embedProvider embedding.Provider
-	switch cfg.Embedding.Provider {
-	case "ollama":
-		embedProvider = embedding.NewOllamaProvider(cfg.Embedding.BaseURL, cfg.Embedding.Model)
-	case "openai":
-		defaultConfig, _ := configService.GetDefault()
-		if defaultConfig != nil {
-			apiKey, err := configService.DecryptAPIKey(defaultConfig.APIKey)
-			if err == nil {
-				embedProvider = embedding.NewOpenAIProvider(apiKey, defaultConfig.BaseURL, cfg.Embedding.Model)
+
+	// First try to get embedding config from database
+	embeddingConfig, _ := configService.GetDefaultByType(model.ConfigTypeEmbedding)
+	if embeddingConfig != nil {
+		apiKey, err := configService.DecryptAPIKey(embeddingConfig.APIKey)
+		if err == nil {
+			switch embeddingConfig.Provider {
+			case model.ProviderOpenAI, model.ProviderCustom:
+				embedProvider = embedding.NewOpenAIProvider(apiKey, embeddingConfig.BaseURL, embeddingConfig.Model)
+			case model.ProviderAzure:
+				embedProvider = embedding.NewOpenAIProvider(apiKey, embeddingConfig.BaseURL, embeddingConfig.Model)
+			}
+		}
+	}
+
+	// Fallback to YAML config if no database config
+	if embedProvider == nil {
+		switch cfg.Embedding.Provider {
+		case "ollama":
+			embedProvider = embedding.NewOllamaProvider(cfg.Embedding.BaseURL, cfg.Embedding.Model)
+		case "openai":
+			defaultConfig, _ := configService.GetDefaultByType(model.ConfigTypeChat)
+			if defaultConfig != nil {
+				apiKey, err := configService.DecryptAPIKey(defaultConfig.APIKey)
+				if err == nil {
+					embedProvider = embedding.NewOpenAIProvider(apiKey, defaultConfig.BaseURL, cfg.Embedding.Model)
+				}
 			}
 		}
 	}
@@ -191,7 +210,7 @@ func (a *App) startServer() {
 	summarizeService := service.NewSummarizeService(sessionRepo, memoryRepo, configService, adapterFactory)
 
 	// Initialize handlers
-	configHandler := handler.NewConfigHandler(configService)
+	configHandler := handler.NewConfigHandler(configService, adapterFactory)
 	chatHandler := handler.NewChatHandler(chatService)
 	sessionHandler := handler.NewSessionHandler(sessionRepo, memoryRepo)
 	memoryHandler := handler.NewMemoryHandler(memoryService, summarizeService)
@@ -227,6 +246,7 @@ func (a *App) startServer() {
 			configs.GET("/:id", configHandler.GetByID)
 			configs.PUT("/:id", configHandler.Update)
 			configs.DELETE("/:id", configHandler.Delete)
+			configs.POST("/:id/test", configHandler.Test)
 		}
 
 		api.POST("/chat", chatHandler.Chat)
@@ -244,6 +264,15 @@ func (a *App) startServer() {
 		{
 			memories.GET("/search", memoryHandler.Search)
 			memories.POST("", memoryHandler.Create)
+		}
+
+		knowledge := api.Group("/knowledge")
+		{
+			knowledge.GET("", memoryHandler.GetAllKnowledge)
+			knowledge.GET("/:id", memoryHandler.GetKnowledge)
+			knowledge.POST("", memoryHandler.CreateKnowledge)
+			knowledge.PUT("/:id", memoryHandler.UpdateKnowledge)
+			knowledge.DELETE("/:id", memoryHandler.DeleteKnowledge)
 		}
 	}
 

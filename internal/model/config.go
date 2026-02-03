@@ -9,7 +9,17 @@ const (
 	ProviderOpenAI  LLMProvider = "openai"
 	ProviderClaude  LLMProvider = "claude"
 	ProviderAzure   LLMProvider = "azure"
+	ProviderOllama  LLMProvider = "ollama"
 	ProviderCustom  LLMProvider = "custom"
+)
+
+// ConfigType represents the purpose of an LLM configuration
+type ConfigType string
+
+const (
+	ConfigTypeChat      ConfigType = "chat"      // For chat/conversation
+	ConfigTypeSummarize ConfigType = "summarize" // For memory summarization
+	ConfigTypeEmbedding ConfigType = "embedding" // For vector embeddings
 )
 
 // LLMConfig represents a configuration for an LLM provider
@@ -23,6 +33,7 @@ type LLMConfig struct {
 	MaxTokens   int         `json:"max_tokens" gorm:"default:4096"`
 	Temperature float64     `json:"temperature" gorm:"default:0.7"`
 	IsDefault   bool        `json:"is_default" gorm:"default:false"`
+	ConfigType  ConfigType  `json:"config_type" gorm:"default:chat"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
@@ -37,6 +48,7 @@ type CreateLLMConfigRequest struct {
 	MaxTokens   int         `json:"max_tokens"`
 	Temperature float64     `json:"temperature"`
 	IsDefault   bool        `json:"is_default"`
+	ConfigType  ConfigType  `json:"config_type"`
 }
 
 // UpdateLLMConfigRequest represents the request to update an LLM config
@@ -49,6 +61,7 @@ type UpdateLLMConfigRequest struct {
 	MaxTokens   *int        `json:"max_tokens"`
 	Temperature *float64    `json:"temperature"`
 	IsDefault   *bool       `json:"is_default"`
+	ConfigType  ConfigType  `json:"config_type"`
 }
 
 // LLMConfigResponse represents the response for an LLM config (without sensitive data)
@@ -61,6 +74,7 @@ type LLMConfigResponse struct {
 	MaxTokens   int         `json:"max_tokens"`
 	Temperature float64     `json:"temperature"`
 	IsDefault   bool        `json:"is_default"`
+	ConfigType  ConfigType  `json:"config_type"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
@@ -76,6 +90,7 @@ func (c *LLMConfig) ToResponse() LLMConfigResponse {
 		MaxTokens:   c.MaxTokens,
 		Temperature: c.Temperature,
 		IsDefault:   c.IsDefault,
+		ConfigType:  c.ConfigType,
 		CreatedAt:   c.CreatedAt,
 		UpdatedAt:   c.UpdatedAt,
 	}

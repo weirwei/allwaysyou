@@ -104,7 +104,7 @@ func main() {
 	summarizeService := service.NewSummarizeService(sessionRepo, memoryRepo, configService, adapterFactory)
 
 	// Initialize handlers
-	configHandler := handler.NewConfigHandler(configService)
+	configHandler := handler.NewConfigHandler(configService, adapterFactory)
 	chatHandler := handler.NewChatHandler(chatService)
 	sessionHandler := handler.NewSessionHandler(sessionRepo, memoryRepo)
 	memoryHandler := handler.NewMemoryHandler(memoryService, summarizeService)
@@ -149,6 +149,7 @@ func main() {
 			configs.GET("/:id", configHandler.GetByID)
 			configs.PUT("/:id", configHandler.Update)
 			configs.DELETE("/:id", configHandler.Delete)
+			configs.POST("/:id/test", configHandler.Test)
 		}
 
 		// Chat routes

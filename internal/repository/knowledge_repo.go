@@ -53,6 +53,19 @@ func (r *KnowledgeRepository) Supersede(oldID, newID string) error {
 		}).Error
 }
 
+// GetAll retrieves all knowledge entries
+func (r *KnowledgeRepository) GetAll(limit int) ([]model.Knowledge, error) {
+	var knowledge []model.Knowledge
+	query := r.db.Order("created_at desc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&knowledge).Error; err != nil {
+		return nil, err
+	}
+	return knowledge, nil
+}
+
 // GetAllActive retrieves all active knowledge (not superseded)
 func (r *KnowledgeRepository) GetAllActive(limit int) ([]model.Knowledge, error) {
 	var knowledge []model.Knowledge

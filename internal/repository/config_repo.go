@@ -43,13 +43,27 @@ func (r *ConfigRepository) GetAll() ([]model.LLMConfig, error) {
 	return configs, nil
 }
 
-// GetDefault retrieves the default LLM config
+// GetDefault retrieves the default LLM config (for backward compatibility, returns chat type)
 func (r *ConfigRepository) GetDefault() (*model.LLMConfig, error) {
+	return r.GetDefaultByType(model.ConfigTypeChat)
+}
+
+// GetByType retrieves all LLM configs of a specific type
+func (r *ConfigRepository) GetByType(configType model.ConfigType) ([]model.LLMConfig, error) {
+	var configs []model.LLMConfig
+	if err := r.db.Where("config_type = ?", configType).Order("created_at desc").Find(&configs).Error; err != nil {
+		return nil, err
+	}
+	return configs, nil
+}
+
+// GetDefaultByType retrieves the default LLM config for a specific type
+func (r *ConfigRepository) GetDefaultByType(configType model.ConfigType) (*model.LLMConfig, error) {
 	var config model.LLMConfig
-	if err := r.db.First(&config, "is_default = ?", true).Error; err != nil {
+	if err := r.db.First(&config, "config_type = ? AND is_default = ?", configType, true).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// If no default, return the first config
-			if err := r.db.First(&config).Error; err != nil {
+			// If no default, return the first config of this type
+			if err := r.db.First(&config, "config_type = ?", configType).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return nil, nil
 				}
@@ -72,11 +86,17 @@ func (r *ConfigRepository) Delete(id string) error {
 	return r.db.Delete(&model.LLMConfig{}, "id = ?", id).Error
 }
 
-// SetDefault sets a config as default and unsets others
+// SetDefault sets a config as default and unsets others of the same type
 func (r *ConfigRepository) SetDefault(id string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		// Unset all defaults
-		if err := tx.Model(&model.LLMConfig{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+		// First get the config to know its type
+		var config model.LLMConfig
+		if err := tx.First(&config, "id = ?", id).Error; err != nil {
+			return err
+		}
+
+		// Unset defaults only for configs of the same type
+		if err := tx.Model(&model.LLMConfig{}).Where("config_type = ? AND is_default = ?", config.ConfigType, true).Update("is_default", false).Error; err != nil {
 			return err
 		}
 		// Set the new default

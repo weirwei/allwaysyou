@@ -54,7 +54,7 @@ web/dist/
 web/node_modules/
 
 # Desktop build (Wails)
-desktop/build/
+desktop/build/bin/
 desktop/frontend/dist/
 desktop/frontend/node_modules/
 desktop/frontend/wailsjs/

@@ -104,3 +104,105 @@ func (s *MemoryService) SearchMemories(ctx context.Context, query string, sessio
 
 	return searchResults, nil
 }
+
+// GetAllKnowledge returns all knowledge entries
+func (s *MemoryService) GetAllKnowledge(ctx context.Context, activeOnly bool, limit int) ([]model.Knowledge, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if activeOnly {
+		return s.knowledgeRepo.GetAllActive(limit)
+	}
+	return s.knowledgeRepo.GetAll(limit)
+}
+
+// GetKnowledge returns a single knowledge entry by ID
+func (s *MemoryService) GetKnowledge(ctx context.Context, id string) (*model.Knowledge, error) {
+	return s.knowledgeRepo.GetByID(id)
+}
+
+// UpdateKnowledge updates a knowledge entry
+func (s *MemoryService) UpdateKnowledge(ctx context.Context, id string, content string) (*model.Knowledge, error) {
+	knowledge, err := s.knowledgeRepo.GetByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get knowledge: %w", err)
+	}
+	if knowledge == nil {
+		return nil, fmt.Errorf("knowledge not found")
+	}
+
+	knowledge.Content = content
+	knowledge.UpdatedAt = time.Now()
+
+	if err := s.knowledgeRepo.Update(knowledge); err != nil {
+		return nil, fmt.Errorf("failed to update knowledge: %w", err)
+	}
+
+	// Update embedding in vector store by deleting and re-adding
+	if s.embedProvider != nil {
+		emb, err := s.embedProvider.GetEmbedding(ctx, content)
+		if err == nil {
+			s.vectorStore.Delete(id)
+			doc := vector.Document{
+				ID:        id,
+				Content:   content,
+				Embedding: emb,
+				MetaData: &vector.DocumentMetadata{
+					Role:     constants.RoleKnowledge,
+					Source:   "manual",
+					IsActive: true,
+				},
+			}
+			s.vectorStore.Add(doc)
+		}
+	}
+
+	return knowledge, nil
+}
+
+// DeleteKnowledge deletes a knowledge entry
+func (s *MemoryService) DeleteKnowledge(ctx context.Context, id string) error {
+	// Delete from vector store first
+	s.vectorStore.Delete(id)
+
+	// Delete from database
+	if err := s.knowledgeRepo.Delete(id); err != nil {
+		return fmt.Errorf("failed to delete knowledge: %w", err)
+	}
+
+	return nil
+}
+
+// CreateKnowledge creates a new knowledge entry manually
+func (s *MemoryService) CreateKnowledge(ctx context.Context, content string) (*model.Knowledge, error) {
+	knowledge := &model.Knowledge{
+		ID:        uuid.New().String(),
+		Content:   content,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	if err := s.knowledgeRepo.Create(knowledge); err != nil {
+		return nil, fmt.Errorf("failed to create knowledge: %w", err)
+	}
+
+	// Generate and store embedding
+	if s.embedProvider != nil {
+		emb, err := s.embedProvider.GetEmbedding(ctx, content)
+		if err == nil {
+			doc := vector.Document{
+				ID:        knowledge.ID,
+				Content:   content,
+				Embedding: emb,
+				MetaData: &vector.DocumentMetadata{
+					Role:     constants.RoleKnowledge,
+					Source:   "manual",
+					IsActive: true,
+				},
+			}
+			s.vectorStore.Add(doc)
+		}
+	}
+
+	return knowledge, nil
+}

@@ -18,15 +18,18 @@ export interface Session {
   updated_at: string
 }
 
+export type ConfigType = 'chat' | 'summarize' | 'embedding'
+
 export interface LLMConfig {
   id: string
   name: string
-  provider: 'openai' | 'claude' | 'azure' | 'custom'
+  provider: 'openai' | 'claude' | 'azure' | 'ollama' | 'custom'
   base_url?: string
   model: string
   max_tokens: number
   temperature: number
   is_default: boolean
+  config_type: ConfigType
   created_at: string
   updated_at: string
 }
@@ -40,6 +43,7 @@ export interface CreateConfigRequest {
   max_tokens?: number
   temperature?: number
   is_default?: boolean
+  config_type?: ConfigType
 }
 
 export interface UpdateConfigRequest {
@@ -51,6 +55,7 @@ export interface UpdateConfigRequest {
   max_tokens?: number
   temperature?: number
   is_default?: boolean
+  config_type?: ConfigType
 }
 
 export interface ChatRequest {
@@ -117,6 +122,21 @@ export async function updateConfig(id: string, config: UpdateConfigRequest): Pro
 
 export async function setDefaultConfig(id: string): Promise<void> {
   await updateConfig(id, { is_default: true })
+}
+
+export interface TestConfigResult {
+  success: boolean
+  message?: string
+  error?: string
+}
+
+export async function testConfig(id: string): Promise<TestConfigResult> {
+  const res = await fetch(`${API_BASE}/configs/${id}/test`, { method: 'POST' })
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Test failed')
+  }
+  return res.json()
 }
 
 // Session API
@@ -208,4 +228,50 @@ export async function chatStream(request: ChatRequest): Promise<StreamResult> {
     stream: generateChunks(),
     sessionId
   }
+}
+
+// Knowledge API
+export interface Knowledge {
+  id: string
+  content: string
+  superseded_by: string
+  created_at: string
+  updated_at: string
+}
+
+export async function getKnowledge(activeOnly = true, limit = 100): Promise<Knowledge[]> {
+  const res = await fetch(`${API_BASE}/knowledge?active_only=${activeOnly}&limit=${limit}`)
+  if (!res.ok) throw new Error('Failed to fetch knowledge')
+  return res.json()
+}
+
+export async function createKnowledge(content: string): Promise<Knowledge> {
+  const res = await fetch(`${API_BASE}/knowledge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content })
+  })
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Failed to create knowledge')
+  }
+  return res.json()
+}
+
+export async function updateKnowledge(id: string, content: string): Promise<Knowledge> {
+  const res = await fetch(`${API_BASE}/knowledge/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content })
+  })
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Failed to update knowledge')
+  }
+  return res.json()
+}
+
+export async function deleteKnowledge(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/knowledge/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete knowledge')
 }

@@ -54,15 +54,17 @@ func (s *SummarizeService) SummarizeSession(ctx context.Context, sessionID strin
 		return "", fmt.Errorf("no messages to summarize")
 	}
 
-	// Get LLM config
-	var llmConfig *model.LLMConfig
-	if session.ConfigID != "" {
-		llmConfig, err = s.configService.GetByID(session.ConfigID)
-	} else {
-		llmConfig, err = s.configService.GetDefault()
-	}
+	// Get LLM config (use summarize type config)
+	llmConfig, err := s.configService.GetDefaultByType(model.ConfigTypeSummarize)
 	if err != nil {
 		return "", fmt.Errorf("failed to get config: %w", err)
+	}
+	if llmConfig == nil {
+		// Fallback to chat config if no summarize config exists
+		llmConfig, err = s.configService.GetDefaultByType(model.ConfigTypeChat)
+		if err != nil {
+			return "", fmt.Errorf("failed to get config: %w", err)
+		}
 	}
 	if llmConfig == nil {
 		return "", fmt.Errorf("no LLM config available")
@@ -184,11 +186,10 @@ func (s *SummarizeService) GenerateTitle(ctx context.Context, sessionID string) 
 		return "New Chat", nil
 	}
 
-	var llmConfig *model.LLMConfig
-	if session.ConfigID != "" {
-		llmConfig, _ = s.configService.GetByID(session.ConfigID)
-	} else {
-		llmConfig, _ = s.configService.GetDefault()
+	// Get summarize config for title generation (fallback to chat config)
+	llmConfig, _ := s.configService.GetDefaultByType(model.ConfigTypeSummarize)
+	if llmConfig == nil {
+		llmConfig, _ = s.configService.GetDefaultByType(model.ConfigTypeChat)
 	}
 
 	if llmConfig == nil {

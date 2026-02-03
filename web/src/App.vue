@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { marked } from 'marked'
 import * as api from './api'
-import type { Message, Session, LLMConfig, CreateConfigRequest, UpdateConfigRequest } from './api'
+import type { Message, Session, LLMConfig, CreateConfigRequest, UpdateConfigRequest, ConfigType, Knowledge } from './api'
 
 // State
 const sessions = ref<Session[]>([])
@@ -10,13 +10,20 @@ const currentSessionId = ref<string | null>(null)
 const messages = ref<Message[]>([])
 const inputText = ref('')
 const isLoading = ref(false)
-const showSettings = ref(false)
+const currentView = ref<'chat' | 'settings'>('chat')
 const configs = ref<LLMConfig[]>([])
 const showAddConfig = ref(false)
 const editingConfigId = ref<string | null>(null)
+const testingConfigId = ref<string | null>(null)
 const sidebarCollapsed = ref(false)
 const sidebarWidth = ref(280)
 const isResizing = ref(false)
+
+// Knowledge state
+const knowledgeList = ref<Knowledge[]>([])
+const showAddKnowledge = ref(false)
+const editingKnowledgeId = ref<string | null>(null)
+const newKnowledgeContent = ref('')
 
 // Theme state
 const currentTheme = ref('default')
@@ -28,6 +35,30 @@ const themes = [
   { id: 'catppuccin-latte', name: 'Catppuccin Latte', preview: ['#eff1f5', '#8839ef', '#179299'] },
   { id: 'rose-peach', name: 'Rosé Peach', preview: ['#FFDCDC', '#e8787a', '#7fb3b3'] },
 ]
+
+// Settings tab state
+type SettingsTab = 'chat' | 'summarize' | 'embedding' | 'knowledge' | 'theme'
+const currentSettingsTab = ref<SettingsTab>('chat')
+const settingsTabs: { id: SettingsTab; name: string; icon: string }[] = [
+  { id: 'chat', name: '聊天模型', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+  { id: 'summarize', name: '总结模型', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
+  { id: 'embedding', name: '向量模型', icon: 'M12 2L2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5' },
+  { id: 'knowledge', name: '记忆管理', icon: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z' },
+  { id: 'theme', name: '主题', icon: 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z' },
+]
+
+// Config type for model tabs
+const currentConfigTab = computed<ConfigType>(() => {
+  if (currentSettingsTab.value === 'chat' || currentSettingsTab.value === 'summarize' || currentSettingsTab.value === 'embedding') {
+    return currentSettingsTab.value
+  }
+  return 'chat'
+})
+
+// Filtered configs by current tab
+const filteredConfigs = computed(() =>
+  configs.value.filter(c => c.config_type === currentConfigTab.value)
+)
 
 // Theme functions
 function loadTheme() {
@@ -116,7 +147,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
         break
       case ',': // Open settings
         e.preventDefault()
-        showSettings.value = true
+        currentView.value = 'settings'
         break
       case 'b': // Toggle sidebar
         e.preventDefault()
@@ -125,13 +156,15 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     }
   }
 
-  // Escape to close modal
+  // Escape to go back
   if (e.key === 'Escape') {
-    if (showSettings.value) {
+    if (currentView.value === 'settings') {
       if (showAddConfig.value) {
         resetConfigForm()
+      } else if (showAddKnowledge.value) {
+        resetKnowledgeForm()
       } else {
-        showSettings.value = false
+        currentView.value = 'chat'
       }
     }
   }
@@ -158,7 +191,8 @@ const newConfig = ref<CreateConfigRequest>({
   model: 'gpt-4o-mini',
   max_tokens: 4096,
   temperature: 0.7,
-  is_default: true
+  is_default: true,
+  config_type: 'chat'
 })
 
 // Refs
@@ -247,7 +281,7 @@ async function sendMessage() {
 
   if (configs.value.length === 0) {
     showToast('Please add an LLM configuration first', 'info')
-    showSettings.value = true
+    currentView.value = 'settings'
     return
   }
 
@@ -301,10 +335,11 @@ function resetConfigForm() {
     provider: 'openai',
     api_key: '',
     base_url: '',
-    model: 'gpt-4o-mini',
+    model: currentConfigTab.value === 'embedding' ? 'text-embedding-3-small' : 'gpt-4o-mini',
     max_tokens: 4096,
     temperature: 0.7,
-    is_default: configs.value.length === 0
+    is_default: filteredConfigs.value.length === 0,
+    config_type: currentConfigTab.value
   }
   editingConfigId.value = null
   showAddConfig.value = false
@@ -320,7 +355,8 @@ function editConfig(config: LLMConfig) {
     model: config.model,
     max_tokens: config.max_tokens,
     temperature: config.temperature,
-    is_default: config.is_default
+    is_default: config.is_default,
+    config_type: config.config_type
   }
   showAddConfig.value = true
 }
@@ -331,32 +367,42 @@ async function saveConfig() {
     return
   }
 
-  // For new config, API key is required
-  if (!editingConfigId.value && !newConfig.value.api_key) {
+  // For new config, API key is required (except for Ollama)
+  if (!editingConfigId.value && !newConfig.value.api_key && newConfig.value.provider !== 'ollama') {
     showToast('Please fill in the API key field', 'info')
     return
+  }
+
+  // For Ollama, set a placeholder API key if not provided
+  const configToSave = { ...newConfig.value }
+  if (configToSave.provider === 'ollama' && !configToSave.api_key) {
+    configToSave.api_key = 'ollama'
+  }
+  // Set default base URL for Ollama if not provided
+  if (configToSave.provider === 'ollama' && !configToSave.base_url) {
+    configToSave.base_url = 'http://localhost:11434/v1'
   }
 
   try {
     if (editingConfigId.value) {
       // Update existing config
       const updateData: UpdateConfigRequest = {
-        name: newConfig.value.name,
-        provider: newConfig.value.provider,
-        base_url: newConfig.value.base_url,
-        model: newConfig.value.model,
-        max_tokens: newConfig.value.max_tokens,
-        temperature: newConfig.value.temperature,
-        is_default: newConfig.value.is_default
+        name: configToSave.name,
+        provider: configToSave.provider,
+        base_url: configToSave.base_url,
+        model: configToSave.model,
+        max_tokens: configToSave.max_tokens,
+        temperature: configToSave.temperature,
+        is_default: configToSave.is_default
       }
       // Only include API key if user entered a new one
-      if (newConfig.value.api_key) {
-        updateData.api_key = newConfig.value.api_key
+      if (configToSave.api_key) {
+        updateData.api_key = configToSave.api_key
       }
       await api.updateConfig(editingConfigId.value, updateData)
     } else {
       // Create new config
-      await api.createConfig(newConfig.value)
+      await api.createConfig(configToSave)
     }
     await loadConfigs()
     resetConfigForm()
@@ -366,13 +412,29 @@ async function saveConfig() {
 }
 
 async function removeConfig(id: string) {
-  if (!confirm('Delete this configuration?')) return
-
   try {
     await api.deleteConfig(id)
     await loadConfigs()
+    showToast('配置已删除', 'success')
   } catch (e) {
     console.error('Failed to delete config:', e)
+    showToast('删除失败')
+  }
+}
+
+async function testConfig(id: string) {
+  testingConfigId.value = id
+  try {
+    const result = await api.testConfig(id)
+    if (result.success) {
+      showToast('连接成功', 'success')
+    } else {
+      showToast(result.error || '连接失败')
+    }
+  } catch (e: any) {
+    showToast(e.message || '测试失败')
+  } finally {
+    testingConfigId.value = null
   }
 }
 
@@ -382,6 +444,59 @@ async function selectConfig(id: string) {
     await loadConfigs()
   } catch (e) {
     console.error('Failed to set default config:', e)
+  }
+}
+
+// Knowledge management
+async function loadKnowledge() {
+  try {
+    knowledgeList.value = await api.getKnowledge(true, 100)
+  } catch (e) {
+    console.error('Failed to load knowledge:', e)
+  }
+}
+
+function resetKnowledgeForm() {
+  newKnowledgeContent.value = ''
+  editingKnowledgeId.value = null
+  showAddKnowledge.value = false
+}
+
+function editKnowledge(knowledge: Knowledge) {
+  editingKnowledgeId.value = knowledge.id
+  newKnowledgeContent.value = knowledge.content
+  showAddKnowledge.value = true
+}
+
+async function saveKnowledge() {
+  if (!newKnowledgeContent.value.trim()) {
+    showToast('请输入记忆内容', 'info')
+    return
+  }
+
+  try {
+    if (editingKnowledgeId.value) {
+      await api.updateKnowledge(editingKnowledgeId.value, newKnowledgeContent.value)
+      showToast('记忆已更新', 'success')
+    } else {
+      await api.createKnowledge(newKnowledgeContent.value)
+      showToast('记忆已添加', 'success')
+    }
+    await loadKnowledge()
+    resetKnowledgeForm()
+  } catch (e: any) {
+    showToast(e.message || '保存失败')
+  }
+}
+
+async function removeKnowledge(id: string) {
+  try {
+    await api.deleteKnowledge(id)
+    await loadKnowledge()
+    showToast('记忆已删除', 'success')
+  } catch (e) {
+    console.error('Failed to delete knowledge:', e)
+    showToast('删除失败')
   }
 }
 
@@ -404,12 +519,19 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+// Watch for tab changes to reload data
+watch(currentSettingsTab, (newTab) => {
+  if (newTab === 'knowledge') {
+    loadKnowledge()
+  }
+})
+
 // Lifecycle
 onMounted(async () => {
   loadTheme()
   // Add global keyboard shortcut listener
   window.addEventListener('keydown', handleGlobalKeydown)
-  await Promise.all([loadSessions(), loadConfigs()])
+  await Promise.all([loadSessions(), loadConfigs(), loadKnowledge()])
 })
 
 // Cleanup on unmount
@@ -431,7 +553,7 @@ onUnmounted(() => {
         <!-- Brand row: logo + name + toggle -->
         <div class="sidebar-brand">
           <div class="brand-logo">
-            <img src="./assets/logo.svg" alt="AllWaysYou" width="32" height="32" />
+            <img src="./assets/logo.svg" alt="AllWaysYou" width="64" height="64" />
           </div>
           <span v-if="!sidebarCollapsed" class="brand-name">AllWaysYou</span>
           <button class="sidebar-toggle" @click.stop="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? 'Expand' : 'Collapse'">
@@ -473,7 +595,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <button class="settings-btn" @click="showSettings = true" :title="sidebarCollapsed ? 'Settings' : ''">
+        <button class="settings-btn" :class="{ active: currentView === 'settings' }" @click="currentView = 'settings'" :title="sidebarCollapsed ? 'Settings' : ''">
           <span v-if="!sidebarCollapsed">Settings</span>
         </button>
       </div>
@@ -487,209 +609,358 @@ onUnmounted(() => {
 
     <!-- Main content -->
     <div class="main-content">
-    <div ref="chatContainer" class="chat-container">
-      <template v-if="messages.length > 0">
-        <div
-          v-for="(msg, index) in messages"
-          :key="msg.id || index"
-          class="message-wrapper"
-          :class="msg.role"
-        >
-          <div class="message" :class="msg.role">
-            <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)"></div>
-            <template v-else>{{ msg.content }}</template>
-          </div>
-          <button
-            class="message-delete-btn"
-            @click="deleteMessage(index)"
-            title="Delete message"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
-        </div>
-
-        <div v-if="isLoading && !messages[messages.length - 1]?.content" class="typing-indicator">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </template>
-
-      <div v-else class="empty-state">
-        <img src="./assets/logo.svg" alt="AllWaysYou" class="empty-state-logo" />
-        <h2>Hello, I'm here to help</h2>
-        <p>Ask me anything or select a previous conversation to continue</p>
-      </div>
-    </div>
-
-    <div class="input-area">
-      <div class="input-container">
-        <textarea
-          v-model="inputText"
-          placeholder="Type your message..."
-          @keydown="handleKeydown"
-          :disabled="isLoading"
-          rows="1"
-        ></textarea>
-        <button @click="sendMessage" :disabled="isLoading || !inputText.trim()">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-          Send
-        </button>
-      </div>
-    </div>
-    </div>
-  </div>
-
-  <!-- Settings Modal -->
-  <div v-if="showSettings" class="modal-overlay" @click.self="showSettings = false">
-    <div class="modal">
-      <h2 v-if="!showAddConfig">Settings</h2>
-      <h2 v-else class="modal-header-with-back">
-        <button class="back-btn" @click="resetConfigForm" title="Back">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-        </button>
-        {{ editingConfigId ? 'Edit Configuration' : 'Add Configuration' }}
-      </h2>
-
-      <h3 v-if="!showAddConfig">LLM Configurations</h3>
-
-      <div v-if="!showAddConfig" class="config-list">
-        <div
-          v-for="config in configs"
-          :key="config.id"
-          class="config-item"
-          :class="{ active: config.is_default }"
-          @click="selectConfig(config.id)"
-        >
-          <div class="config-info">
-            <div class="config-name">
-              {{ config.name }}
-              <span v-if="config.is_default" class="default-badge">Default</span>
-            </div>
-            <div class="config-detail">{{ config.provider }} · {{ config.model }}</div>
-          </div>
-          <div class="config-actions">
-            <button class="btn-icon" @click.stop="editConfig(config)" title="Edit">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-              </svg>
-            </button>
-            <button class="btn-icon btn-danger" @click.stop="removeConfig(config.id)" title="Delete">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <p v-if="configs.length === 0" class="empty-config-text">
-          No configurations yet. Add one to start chatting.
-        </p>
-      </div>
-
-      <button v-if="!showAddConfig" class="btn-add-config" @click="showAddConfig = true; editingConfigId = null">
-        <span class="icon-wrapper">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-        </span>
-        Add New Configuration
-      </button>
-
-      <!-- Theme Settings -->
-      <template v-if="!showAddConfig">
-        <h3 class="theme-section-title">Theme</h3>
-
-        <div class="theme-list">
-          <button
-            v-for="theme in themes"
-            :key="theme.id"
-            class="theme-option"
-            :class="{ active: currentTheme === theme.id }"
-            @click="setTheme(theme.id)"
-          >
-            <div class="theme-preview">
-              <div class="theme-preview-bg" :style="{ backgroundColor: theme.preview[0] }">
-                <div class="theme-preview-accent" :style="{ backgroundColor: theme.preview[1] }"></div>
-                <div class="theme-preview-secondary" :style="{ backgroundColor: theme.preview[2] }"></div>
+      <!-- Chat View -->
+      <template v-if="currentView === 'chat'">
+        <div ref="chatContainer" class="chat-container">
+          <template v-if="messages.length > 0">
+            <div
+              v-for="(msg, index) in messages"
+              :key="msg.id || index"
+              class="message-wrapper"
+              :class="msg.role"
+            >
+              <div class="message" :class="msg.role">
+                <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)"></div>
+                <template v-else>{{ msg.content }}</template>
               </div>
+              <button
+                class="message-delete-btn"
+                @click="deleteMessage(index)"
+                title="Delete message"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
             </div>
-            <span class="theme-name">{{ theme.name }}</span>
-            <svg v-if="currentTheme === theme.id" class="theme-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-          </button>
+
+            <div v-if="isLoading && !messages[messages.length - 1]?.content" class="typing-indicator">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </template>
+
+          <div v-else class="empty-state">
+            <img src="./assets/logo.svg" alt="AllWaysYou" class="empty-state-logo" />
+            <h2>Hello, I'm here to help</h2>
+            <p>Ask me anything or select a previous conversation to continue</p>
+          </div>
+        </div>
+
+        <div class="input-area">
+          <div class="input-container">
+            <textarea
+              v-model="inputText"
+              placeholder="Type your message..."
+              @keydown="handleKeydown"
+              :disabled="isLoading"
+              rows="1"
+            ></textarea>
+            <button @click="sendMessage" :disabled="isLoading || !inputText.trim()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+              Send
+            </button>
+          </div>
         </div>
       </template>
 
-      <template v-if="showAddConfig">
-        <div class="form-group">
-          <label>Name *</label>
-          <input v-model="newConfig.name" placeholder="My OpenAI Config" />
-        </div>
+      <!-- Settings View -->
+      <template v-else-if="currentView === 'settings'">
+        <div class="settings-page">
+          <!-- Titlebar drag region for macOS -->
+          <div class="settings-titlebar"></div>
+          <div class="settings-header">
+            <button class="back-btn" @click="currentView = 'chat'" title="Back to chat">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <h1>Settings</h1>
+          </div>
 
-        <div class="form-group">
-          <label>Provider *</label>
-          <select v-model="newConfig.provider">
-            <option value="openai">OpenAI</option>
-            <option value="claude">Claude (Anthropic)</option>
-            <option value="azure">Azure OpenAI</option>
-            <option value="custom">Custom (OpenAI Compatible)</option>
-          </select>
-        </div>
+          <!-- Settings Tabs -->
+          <div class="settings-tabs">
+            <button
+              v-for="tab in settingsTabs"
+              :key="tab.id"
+              class="settings-tab"
+              :class="{ active: currentSettingsTab === tab.id }"
+              @click="currentSettingsTab = tab.id; if (['chat', 'summarize', 'embedding'].includes(tab.id)) { showAddConfig = false; showAddKnowledge = false; } else if (tab.id === 'knowledge') { showAddConfig = false; }"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path :d="tab.icon"></path>
+              </svg>
+              {{ tab.name }}
+            </button>
+          </div>
 
-        <div class="form-group">
-          <label>API Key {{ editingConfigId ? '(leave empty to keep current)' : '*' }}</label>
-          <input v-model="newConfig.api_key" type="password" :placeholder="editingConfigId ? '••••••••' : 'sk-...'" />
-        </div>
+          <div class="settings-content">
+            <!-- Model Config Tabs (chat, summarize, embedding) -->
+            <template v-if="['chat', 'summarize', 'embedding'].includes(currentSettingsTab)">
+              <template v-if="!showAddConfig">
+                <div class="config-list">
+                  <div
+                    v-for="config in filteredConfigs"
+                    :key="config.id"
+                    class="config-item"
+                    :class="{ active: config.is_default }"
+                    @click="selectConfig(config.id)"
+                  >
+                    <div class="config-info">
+                      <div class="config-name">
+                        {{ config.name }}
+                        <span v-if="config.is_default" class="default-badge">Default</span>
+                      </div>
+                      <div class="config-detail">{{ config.provider }} · {{ config.model }}</div>
+                    </div>
+                    <div class="config-actions">
+                      <button
+                        class="btn-icon btn-test"
+                        :class="{ testing: testingConfigId === config.id }"
+                        @click.stop="testConfig(config.id)"
+                        :disabled="testingConfigId === config.id"
+                        title="Test"
+                      >
+                        <svg v-if="testingConfigId !== config.id" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        <svg v-else class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="12" y1="2" x2="12" y2="6"></line>
+                          <line x1="12" y1="18" x2="12" y2="22"></line>
+                          <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                          <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                          <line x1="2" y1="12" x2="6" y2="12"></line>
+                          <line x1="18" y1="12" x2="22" y2="12"></line>
+                          <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                          <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                        </svg>
+                      </button>
+                      <button class="btn-icon" @click.stop="editConfig(config)" title="Edit">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                      </button>
+                      <button class="btn-icon btn-danger" @click.stop="removeConfig(config.id)" title="Delete">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
 
-        <div class="form-group">
-          <label>Base URL (optional)</label>
-          <input v-model="newConfig.base_url" placeholder="https://api.openai.com/v1" />
-        </div>
+                  <p v-if="filteredConfigs.length === 0" class="empty-config-text">
+                    暂无{{ settingsTabs.find(t => t.id === currentSettingsTab)?.name }}配置
+                  </p>
+                </div>
 
-        <div class="form-group">
-          <label>Model *</label>
-          <input v-model="newConfig.model" placeholder="gpt-4o-mini" />
-        </div>
+                <button class="btn-add-config" @click="showAddConfig = true; editingConfigId = null; newConfig.config_type = currentConfigTab">
+                  <span class="icon-wrapper">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  </span>
+                  添加{{ settingsTabs.find(t => t.id === currentSettingsTab)?.name }}配置
+                </button>
+              </template>
 
-        <div class="form-group">
-          <label>Max Tokens</label>
-          <input v-model.number="newConfig.max_tokens" type="number" />
-        </div>
+              <!-- Add/Edit Config Form -->
+              <template v-else>
+                <div class="form-header">
+                  <button class="back-btn" @click="resetConfigForm" title="Back">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                  </button>
+                  <h2>{{ editingConfigId ? '编辑配置' : `添加${settingsTabs.find(t => t.id === currentSettingsTab)?.name}配置` }}</h2>
+                </div>
 
-        <div class="form-group">
-          <label>Temperature (0-2)</label>
-          <input v-model.number="newConfig.temperature" type="number" step="0.1" min="0" max="2" />
-        </div>
+                <div class="config-form">
+                  <div class="form-group">
+                    <label>Name *</label>
+                    <input v-model="newConfig.name" placeholder="My OpenAI Config" />
+                  </div>
 
-        <div class="form-group" v-if="!editingConfigId || !configs.find(c => c.id === editingConfigId)?.is_default">
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="newConfig.is_default" />
-            <span>Set as default configuration</span>
-          </label>
-        </div>
+                  <div class="form-group">
+                    <label>Provider *</label>
+                    <select v-model="newConfig.provider">
+                      <option value="openai">OpenAI</option>
+                      <option value="claude">Claude (Anthropic)</option>
+                      <option value="azure">Azure OpenAI</option>
+                      <option value="ollama">Ollama (Local)</option>
+                      <option value="custom">Custom (OpenAI Compatible)</option>
+                    </select>
+                  </div>
 
-        <div class="modal-actions">
-          <button class="btn-secondary" @click="resetConfigForm">Cancel</button>
-          <button class="btn-primary" @click="saveConfig">{{ editingConfigId ? 'Update' : 'Save' }}</button>
+                  <div class="form-group" v-if="newConfig.provider !== 'ollama'">
+                    <label>API Key {{ editingConfigId ? '(leave empty to keep current)' : '*' }}</label>
+                    <input v-model="newConfig.api_key" type="password" :placeholder="editingConfigId ? '••••••••' : 'sk-...'" />
+                  </div>
+
+                  <div class="form-group">
+                    <label>Base URL (optional)</label>
+                    <input v-model="newConfig.base_url" placeholder="https://api.openai.com/v1" />
+                  </div>
+
+                  <div class="form-group">
+                    <label>Model *</label>
+                    <input v-model="newConfig.model" placeholder="gpt-4o-mini" />
+                  </div>
+
+                  <div class="form-group" v-if="currentSettingsTab !== 'embedding'">
+                    <label>Max Tokens</label>
+                    <input v-model.number="newConfig.max_tokens" type="number" />
+                  </div>
+
+                  <div class="form-group" v-if="currentSettingsTab !== 'embedding'">
+                    <label>Temperature (0-2)</label>
+                    <input v-model.number="newConfig.temperature" type="number" step="0.1" min="0" max="2" />
+                  </div>
+
+                  <div class="form-group" v-if="!editingConfigId || !configs.find(c => c.id === editingConfigId)?.is_default">
+                    <label class="checkbox-label">
+                      <input type="checkbox" v-model="newConfig.is_default" />
+                      <span>Set as default configuration</span>
+                    </label>
+                  </div>
+
+                  <div class="form-actions">
+                    <button class="btn-secondary" @click="resetConfigForm">Cancel</button>
+                    <button
+                      v-if="editingConfigId"
+                      class="btn-test-config"
+                      :class="{ testing: testingConfigId === editingConfigId }"
+                      :disabled="testingConfigId === editingConfigId"
+                      @click="testConfig(editingConfigId)"
+                    >
+                      <svg v-if="testingConfigId !== editingConfigId" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                      </svg>
+                      <svg v-else class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="2" x2="12" y2="6"></line>
+                        <line x1="12" y1="18" x2="12" y2="22"></line>
+                        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                        <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                        <line x1="2" y1="12" x2="6" y2="12"></line>
+                        <line x1="18" y1="12" x2="22" y2="12"></line>
+                        <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                        <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                      </svg>
+                      Test
+                    </button>
+                    <button class="btn-primary" @click="saveConfig">{{ editingConfigId ? 'Update' : 'Save' }}</button>
+                  </div>
+                </div>
+              </template>
+            </template>
+
+            <!-- Knowledge Management Tab -->
+            <template v-else-if="currentSettingsTab === 'knowledge'">
+              <template v-if="!showAddKnowledge">
+                <div class="knowledge-list">
+                  <div
+                    v-for="knowledge in knowledgeList"
+                    :key="knowledge.id"
+                    class="knowledge-item"
+                  >
+                    <div class="knowledge-content">{{ knowledge.content }}</div>
+                    <div class="knowledge-meta">
+                      <span class="knowledge-date">{{ new Date(knowledge.created_at).toLocaleDateString() }}</span>
+                    </div>
+                    <div class="knowledge-actions">
+                      <button class="btn-icon" @click="editKnowledge(knowledge)" title="Edit">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                      </button>
+                      <button class="btn-icon btn-danger" @click="removeKnowledge(knowledge.id)" title="Delete">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <p v-if="knowledgeList.length === 0" class="empty-config-text">
+                    暂无记忆条目
+                  </p>
+                </div>
+
+                <button class="btn-add-config" @click="showAddKnowledge = true; editingKnowledgeId = null; newKnowledgeContent = ''">
+                  <span class="icon-wrapper">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  </span>
+                  添加记忆
+                </button>
+              </template>
+
+              <!-- Add/Edit Knowledge Form -->
+              <template v-else>
+                <div class="form-header">
+                  <button class="back-btn" @click="resetKnowledgeForm" title="Back">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                  </button>
+                  <h2>{{ editingKnowledgeId ? '编辑记忆' : '添加记忆' }}</h2>
+                </div>
+
+                <div class="knowledge-form">
+                  <div class="form-group">
+                    <label>记忆内容 *</label>
+                    <textarea
+                      v-model="newKnowledgeContent"
+                      placeholder="输入需要记住的内容，例如：用户偏好使用Vue 3和TypeScript"
+                      rows="5"
+                    ></textarea>
+                  </div>
+
+                  <div class="form-actions">
+                    <button class="btn-secondary" @click="resetKnowledgeForm">Cancel</button>
+                    <button class="btn-primary" @click="saveKnowledge">{{ editingKnowledgeId ? 'Update' : 'Save' }}</button>
+                  </div>
+                </div>
+              </template>
+            </template>
+
+            <!-- Theme Settings Tab -->
+            <template v-else-if="currentSettingsTab === 'theme'">
+              <div class="theme-list">
+                <button
+                  v-for="theme in themes"
+                  :key="theme.id"
+                  class="theme-option"
+                  :class="{ active: currentTheme === theme.id }"
+                  @click="setTheme(theme.id)"
+                >
+                  <div class="theme-preview">
+                    <div class="theme-preview-bg" :style="{ backgroundColor: theme.preview[0] }">
+                      <div class="theme-preview-accent" :style="{ backgroundColor: theme.preview[1] }"></div>
+                      <div class="theme-preview-secondary" :style="{ backgroundColor: theme.preview[2] }"></div>
+                    </div>
+                  </div>
+                  <span class="theme-name">{{ theme.name }}</span>
+                  <svg v-if="currentTheme === theme.id" class="theme-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </div>
         </div>
       </template>
-
-      <div v-if="!showAddConfig" class="modal-actions">
-        <button class="btn-secondary" @click="showSettings = false">Close</button>
-      </div>
     </div>
   </div>
 

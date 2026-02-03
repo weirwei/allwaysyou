@@ -53,7 +53,7 @@ func (s *ChatService) Chat(ctx context.Context, req *model.ChatRequest) (*model.
 	if req.ConfigID != "" {
 		llmConfig, err = s.configService.GetByID(req.ConfigID)
 	} else {
-		llmConfig, err = s.configService.GetDefault()
+		llmConfig, err = s.configService.GetDefaultByType(model.ConfigTypeChat)
 	}
 	if err != nil {
 		log.Printf("[ChatService:Chat] Error getting config: %v", err)
@@ -177,7 +177,7 @@ func (s *ChatService) ChatStream(ctx context.Context, req *model.ChatRequest) (<
 	if req.ConfigID != "" {
 		llmConfig, err = s.configService.GetByID(req.ConfigID)
 	} else {
-		llmConfig, err = s.configService.GetDefault()
+		llmConfig, err = s.configService.GetDefaultByType(model.ConfigTypeChat)
 	}
 	if err != nil {
 		log.Printf("[ChatService:ChatStream] Error getting config: %v", err)
