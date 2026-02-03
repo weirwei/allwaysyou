@@ -28,8 +28,23 @@ function startResize(e: MouseEvent) {
 function handleResize(e: MouseEvent) {
   if (!isResizing.value) return
   const newWidth = e.clientX
-  if (newWidth >= 200 && newWidth <= 400) {
-    sidebarWidth.value = newWidth
+  const collapseThreshold = 150
+  const minExpandedWidth = 200
+  const maxExpandedWidth = 400
+
+  if (sidebarCollapsed.value) {
+    // Currently collapsed - expand if dragged past threshold
+    if (newWidth >= collapseThreshold) {
+      sidebarCollapsed.value = false
+      sidebarWidth.value = Math.max(minExpandedWidth, Math.min(newWidth, maxExpandedWidth))
+    }
+  } else {
+    // Currently expanded
+    if (newWidth < collapseThreshold) {
+      sidebarCollapsed.value = true
+    } else {
+      sidebarWidth.value = Math.max(minExpandedWidth, Math.min(newWidth, maxExpandedWidth))
+    }
   }
 }
 
@@ -115,7 +130,7 @@ async function selectSession(session: Session) {
 
 async function deleteSession(id: string, event: Event) {
   event.stopPropagation()
-  if (!confirm('Delete this conversation?')) return
+  event.preventDefault()
 
   try {
     await api.deleteSession(id)
@@ -124,8 +139,10 @@ async function deleteSession(id: string, event: Event) {
       currentSessionId.value = null
       messages.value = []
     }
+    showToast('Conversation deleted', 'success')
   } catch (e) {
     console.error('Failed to delete session:', e)
+    showToast('Failed to delete conversation')
   }
 }
 
@@ -325,7 +342,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <div class="app-container" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'is-resizing': isResizing }">
     <!-- Sidebar -->
     <div class="sidebar" :style="{ width: sidebarCollapsed ? '100px' : sidebarWidth + 'px' }">
       <!-- Title bar area - native macOS traffic lights -->
@@ -394,9 +411,8 @@ onMounted(async () => {
         </button>
       </div>
 
-      <!-- Resize handle -->
+      <!-- Resize handle - always visible -->
       <div
-        v-if="!sidebarCollapsed"
         class="sidebar-resize-handle"
         @mousedown="startResize"
       ></div>

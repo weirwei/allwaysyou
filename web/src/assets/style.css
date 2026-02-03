@@ -129,6 +129,11 @@ body {
   transition: width 0.2s ease;
 }
 
+/* Disable transition when resizing for smooth drag */
+.app-container.is-resizing .sidebar {
+  transition: none;
+}
+
 /* Sidebar titlebar - native macOS traffic lights */
 .sidebar-titlebar {
   height: 52px;
@@ -461,6 +466,8 @@ body {
   transition: all var(--transition-fast);
   font-size: 1.25rem;
   line-height: 1;
+  position: relative;
+  z-index: 2;
 }
 
 .session-item:hover .delete-btn {
@@ -1539,7 +1546,7 @@ body {
    ======================================== */
 .toast {
   position: fixed;
-  bottom: var(--space-xl);
+  top: var(--space-xl);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -1617,7 +1624,7 @@ body {
 .toast-enter-from,
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(20px);
+  transform: translateX(-50%) translateY(-20px);
 }
 
 /* ========================================
