@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { marked } from 'marked'
 import * as api from './api'
 import type { Message, Session, LLMConfig, CreateConfigRequest, UpdateConfigRequest } from './api'
@@ -17,6 +17,34 @@ const editingConfigId = ref<string | null>(null)
 const sidebarCollapsed = ref(false)
 const sidebarWidth = ref(280)
 const isResizing = ref(false)
+
+// Theme state
+const currentTheme = ref('default')
+const themes = [
+  { id: 'default', name: 'Default', preview: ['#1A1A2E', '#6366F1', '#06B6D4'] },
+  { id: 'monokai', name: 'Monokai', preview: ['#272822', '#f92672', '#a6e22e'] },
+  { id: 'solarized', name: 'Solarized Dark', preview: ['#002b36', '#268bd2', '#2aa198'] },
+  { id: 'solarized-light', name: 'Solarized Light', preview: ['#fdf6e3', '#268bd2', '#859900'] },
+  { id: 'catppuccin-latte', name: 'Catppuccin Latte', preview: ['#eff1f5', '#8839ef', '#179299'] },
+  { id: 'rose-peach', name: 'Rosé Peach', preview: ['#FFDCDC', '#e8787a', '#7fb3b3'] },
+]
+
+// Theme functions
+function loadTheme() {
+  const savedTheme = localStorage.getItem('appTheme')
+  if (savedTheme) currentTheme.value = savedTheme
+  applyTheme()
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', currentTheme.value)
+}
+
+function setTheme(themeId: string) {
+  currentTheme.value = themeId
+  localStorage.setItem('appTheme', themeId)
+  applyTheme()
+}
 
 // Sidebar resize
 function startResize(e: MouseEvent) {
@@ -337,6 +365,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 // Lifecycle
 onMounted(async () => {
+  loadTheme()
   await Promise.all([loadSessions(), loadConfigs()])
 })
 </script>
@@ -538,6 +567,32 @@ onMounted(async () => {
         </span>
         Add New Configuration
       </button>
+
+      <!-- Theme Settings -->
+      <template v-if="!showAddConfig">
+        <h3 class="theme-section-title">Theme</h3>
+
+        <div class="theme-list">
+          <button
+            v-for="theme in themes"
+            :key="theme.id"
+            class="theme-option"
+            :class="{ active: currentTheme === theme.id }"
+            @click="setTheme(theme.id)"
+          >
+            <div class="theme-preview">
+              <div class="theme-preview-bg" :style="{ backgroundColor: theme.preview[0] }">
+                <div class="theme-preview-accent" :style="{ backgroundColor: theme.preview[1] }"></div>
+                <div class="theme-preview-secondary" :style="{ backgroundColor: theme.preview[2] }"></div>
+              </div>
+            </div>
+            <span class="theme-name">{{ theme.name }}</span>
+            <svg v-if="currentTheme === theme.id" class="theme-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </button>
+        </div>
+      </template>
 
       <template v-if="showAddConfig">
         <div class="form-group">

@@ -13,46 +13,8 @@
   box-sizing: border-box;
 }
 
-/* Design System Variables - AI Native Dark Theme */
+/* Design System Variables */
 :root {
-  /* Primary Colors - AI Purple Gradient */
-  --ai-accent: #6366F1;
-  --ai-accent-light: #818CF8;
-  --ai-accent-dark: #4F46E5;
-  --ai-accent-glow: rgba(99, 102, 241, 0.3);
-
-  /* Secondary - Cyan for interactions */
-  --cyan-accent: #06B6D4;
-  --cyan-light: #22D3EE;
-  --cyan-glow: rgba(6, 182, 212, 0.2);
-
-  /* Success/Status */
-  --success: #10B981;
-  --success-light: #34D399;
-  --warning: #F59E0B;
-  --error: #EF4444;
-
-  /* Dark Background System */
-  --bg-primary: #0F0F1A;
-  --bg-secondary: #1A1A2E;
-  --bg-tertiary: #252542;
-  --bg-elevated: #2D2D4A;
-  --bg-hover: #363658;
-
-  /* Text Colors */
-  --text-primary: #F8FAFC;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
-
-  /* Borders & Shadows */
-  --border-subtle: rgba(148, 163, 184, 0.1);
-  --border-default: rgba(148, 163, 184, 0.2);
-  --border-focus: rgba(99, 102, 241, 0.5);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px var(--ai-accent-glow);
-
   /* Spacing */
   --space-xs: 4px;
   --space-sm: 8px;
@@ -81,6 +43,228 @@
   --sidebar-width: 280px;
   --input-height: 52px;
   --message-max-width: 720px;
+}
+
+/* ========================================
+   Theme: Default (AI Purple)
+   ======================================== */
+:root, [data-theme="default"] {
+  /* Backgrounds */
+  --bg-primary: #0F0F1A;
+  --bg-secondary: #1A1A2E;
+  --bg-tertiary: #252542;
+  --bg-elevated: #2D2D4A;
+  --bg-hover: #363658;
+  /* Text */
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  /* Accent */
+  --ai-accent: #6366F1;
+  --ai-accent-light: #818CF8;
+  --ai-accent-dark: #4F46E5;
+  --ai-accent-glow: rgba(99, 102, 241, 0.3);
+  --cyan-accent: #06B6D4;
+  --cyan-light: #22D3EE;
+  --cyan-glow: rgba(6, 182, 212, 0.2);
+  /* Status */
+  --success: #10B981;
+  --success-light: #34D399;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  /* Borders & Shadows */
+  --border-subtle: rgba(148, 163, 184, 0.1);
+  --border-default: rgba(148, 163, 184, 0.2);
+  --border-focus: rgba(99, 102, 241, 0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px var(--ai-accent-glow);
+}
+
+/* ========================================
+   Theme: Monokai
+   ======================================== */
+[data-theme="monokai"] {
+  /* Backgrounds */
+  --bg-primary: #1e1f1c;
+  --bg-secondary: #272822;
+  --bg-tertiary: #3e3d32;
+  --bg-elevated: #49483e;
+  --bg-hover: #75715e;
+  /* Text */
+  --text-primary: #f8f8f2;
+  --text-secondary: #a6a6a6;
+  --text-muted: #75715e;
+  /* Accent - Monokai Pink */
+  --ai-accent: #f92672;
+  --ai-accent-light: #ff6188;
+  --ai-accent-dark: #c7254e;
+  --ai-accent-glow: rgba(249, 38, 114, 0.3);
+  --cyan-accent: #66d9ef;
+  --cyan-light: #78dce8;
+  --cyan-glow: rgba(102, 217, 239, 0.2);
+  /* Status - Monokai colors */
+  --success: #a6e22e;
+  --success-light: #b8e648;
+  --warning: #e6db74;
+  --error: #f92672;
+  /* Borders & Shadows */
+  --border-subtle: rgba(248, 248, 242, 0.1);
+  --border-default: rgba(248, 248, 242, 0.2);
+  --border-focus: rgba(249, 38, 114, 0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 20px var(--ai-accent-glow);
+}
+
+/* ========================================
+   Theme: Solarized Dark
+   ======================================== */
+[data-theme="solarized"] {
+  /* Backgrounds - Solarized base colors */
+  --bg-primary: #002b36;
+  --bg-secondary: #073642;
+  --bg-tertiary: #0a4050;
+  --bg-elevated: #1a5566;
+  --bg-hover: #2a6677;
+  /* Text - Solarized content tones */
+  --text-primary: #93a1a1;
+  --text-secondary: #839496;
+  --text-muted: #586e75;
+  /* Accent - Solarized Blue */
+  --ai-accent: #268bd2;
+  --ai-accent-light: #2aa198;
+  --ai-accent-dark: #1a6091;
+  --ai-accent-glow: rgba(38, 139, 210, 0.3);
+  --cyan-accent: #2aa198;
+  --cyan-light: #35bdb3;
+  --cyan-glow: rgba(42, 161, 152, 0.2);
+  /* Status - Solarized accent colors */
+  --success: #859900;
+  --success-light: #98b000;
+  --warning: #b58900;
+  --error: #dc322f;
+  /* Borders & Shadows */
+  --border-subtle: rgba(147, 161, 161, 0.1);
+  --border-default: rgba(147, 161, 161, 0.2);
+  --border-focus: rgba(38, 139, 210, 0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 20px var(--ai-accent-glow);
+}
+
+/* ========================================
+   Theme: Solarized Light
+   ======================================== */
+[data-theme="solarized-light"] {
+  /* Backgrounds - Solarized light base */
+  --bg-primary: #fdf6e3;
+  --bg-secondary: #eee8d5;
+  --bg-tertiary: #e4ddc8;
+  --bg-elevated: #d9d2bd;
+  --bg-hover: #cfc8b3;
+  /* Text - Solarized dark tones */
+  --text-primary: #073642;
+  --text-secondary: #586e75;
+  --text-muted: #93a1a1;
+  /* Accent - Solarized Blue */
+  --ai-accent: #268bd2;
+  --ai-accent-light: #2aa198;
+  --ai-accent-dark: #1a6091;
+  --ai-accent-glow: rgba(38, 139, 210, 0.2);
+  --cyan-accent: #2aa198;
+  --cyan-light: #35bdb3;
+  --cyan-glow: rgba(42, 161, 152, 0.15);
+  /* Status - Solarized accent colors */
+  --success: #859900;
+  --success-light: #98b000;
+  --warning: #b58900;
+  --error: #dc322f;
+  /* Borders & Shadows */
+  --border-subtle: rgba(7, 54, 66, 0.1);
+  --border-default: rgba(7, 54, 66, 0.2);
+  --border-focus: rgba(38, 139, 210, 0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+  --shadow-glow: 0 0 20px var(--ai-accent-glow);
+}
+
+/* ========================================
+   Theme: Catppuccin Latte
+   ======================================== */
+[data-theme="catppuccin-latte"] {
+  /* Backgrounds - Catppuccin Latte base */
+  --bg-primary: #eff1f5;
+  --bg-secondary: #e6e9ef;
+  --bg-tertiary: #ccd0da;
+  --bg-elevated: #bcc0cc;
+  --bg-hover: #acb0be;
+  /* Text - Catppuccin Latte text */
+  --text-primary: #4c4f69;
+  --text-secondary: #6c6f85;
+  --text-muted: #9ca0b0;
+  /* Accent - Catppuccin Mauve (Purple) */
+  --ai-accent: #8839ef;
+  --ai-accent-light: #dd7878;
+  --ai-accent-dark: #7029cf;
+  --ai-accent-glow: rgba(136, 57, 239, 0.2);
+  --cyan-accent: #179299;
+  --cyan-light: #04a5e5;
+  --cyan-glow: rgba(23, 146, 153, 0.15);
+  /* Status - Catppuccin Latte colors */
+  --success: #40a02b;
+  --success-light: #50b03b;
+  --warning: #df8e1d;
+  --error: #d20f39;
+  /* Borders & Shadows */
+  --border-subtle: rgba(76, 79, 105, 0.1);
+  --border-default: rgba(76, 79, 105, 0.2);
+  --border-focus: rgba(136, 57, 239, 0.5);
+  --shadow-sm: 0 1px 2px rgba(76, 79, 105, 0.08);
+  --shadow-md: 0 4px 12px rgba(76, 79, 105, 0.12);
+  --shadow-lg: 0 8px 24px rgba(76, 79, 105, 0.16);
+  --shadow-glow: 0 0 20px var(--ai-accent-glow);
+}
+
+/* ========================================
+   Theme: Rosé Pine Dawn (Peach)
+   ======================================== */
+[data-theme="rose-peach"] {
+  /* Backgrounds - Warm peach palette */
+  --bg-primary: #FFF2EB;
+  --bg-secondary: #FFDCDC;
+  --bg-tertiary: #FFE8CD;
+  --bg-elevated: #FFD6BA;
+  --bg-hover: #FFCAA8;
+  /* Text - Warm brown tones */
+  --text-primary: #5c4033;
+  --text-secondary: #8b6b5c;
+  --text-muted: #b89c8e;
+  /* Accent - Coral/Rose */
+  --ai-accent: #e8787a;
+  --ai-accent-light: #f5a0a2;
+  --ai-accent-dark: #d65d5f;
+  --ai-accent-glow: rgba(232, 120, 122, 0.25);
+  --cyan-accent: #7fb3b3;
+  --cyan-light: #9dcfcf;
+  --cyan-glow: rgba(127, 179, 179, 0.2);
+  /* Status colors */
+  --success: #7ab87a;
+  --success-light: #92c892;
+  --warning: #e8a850;
+  --error: #e87878;
+  /* Borders & Shadows */
+  --border-subtle: rgba(92, 64, 51, 0.1);
+  --border-default: rgba(92, 64, 51, 0.18);
+  --border-focus: rgba(232, 120, 122, 0.5);
+  --shadow-sm: 0 1px 2px rgba(92, 64, 51, 0.06);
+  --shadow-md: 0 4px 12px rgba(92, 64, 51, 0.1);
+  --shadow-lg: 0 8px 24px rgba(92, 64, 51, 0.14);
+  --shadow-glow: 0 0 20px var(--ai-accent-glow);
 }
 
 /* Base Styles */
@@ -939,8 +1123,8 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(15, 15, 26, 0.9);
-  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -954,18 +1138,15 @@ body {
 }
 
 .modal {
-  background: linear-gradient(180deg, var(--bg-secondary) 0%, rgba(26, 26, 46, 0.98) 100%);
+  background: var(--bg-secondary);
   padding: var(--space-xl);
   border-radius: var(--radius-xl);
   width: 560px;
   max-width: 90%;
   max-height: 85vh;
   overflow-y: auto;
-  border: 1px solid var(--border-subtle);
-  box-shadow:
-    var(--shadow-lg),
-    0 0 80px rgba(99, 102, 241, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
   animation: modalSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
 }
@@ -1625,6 +1806,89 @@ body {
 .toast-leave-to {
   opacity: 0;
   transform: translateX(-50%) translateY(-20px);
+}
+
+/* ========================================
+   Theme Settings
+   ======================================== */
+.theme-section-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-md);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.theme-option:hover {
+  border-color: var(--border-default);
+  background: var(--bg-elevated);
+}
+
+.theme-option.active {
+  border-color: var(--ai-accent);
+  background: var(--bg-elevated);
+}
+
+.theme-preview {
+  width: 48px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.theme-preview-bg {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  padding: 4px;
+  gap: 3px;
+}
+
+.theme-preview-accent {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.theme-preview-secondary {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.theme-name {
+  flex: 1;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.theme-check {
+  color: var(--ai-accent);
+  flex-shrink: 0;
 }
 
 /* ========================================
