@@ -24,11 +24,12 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 26, G: 27, B: 38, A: 255}, // #1a1b26 - matches app dark theme
+		BackgroundColour: &options.RGBA{R: 26, G: 26, B: 46, A: 255}, // #1A1A2E - matches --bg-secondary
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
-		Frameless: true,
+		Frameless: false,
 		Mac: &mac.Options{
+			TitleBar: mac.TitleBarHiddenInset(),
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			About: &mac.AboutInfo{

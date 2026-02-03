@@ -327,35 +327,46 @@ onMounted(async () => {
 <template>
   <div class="app-container" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
     <!-- Sidebar -->
-    <div class="sidebar" :style="{ width: sidebarCollapsed ? '72px' : sidebarWidth + 'px' }">
-      <!-- Title bar area -->
+    <div class="sidebar" :style="{ width: sidebarCollapsed ? '100px' : sidebarWidth + 'px' }">
+      <!-- Title bar area - native macOS traffic lights -->
       <div class="sidebar-titlebar">
-        <div v-if="!sidebarCollapsed" class="window-controls">
-          <button class="window-btn close" @click="windowClose" title="Close"></button>
-          <button class="window-btn minimize" @click="windowMinimize" title="Minimize"></button>
-          <button class="window-btn maximize" @click="windowMaximize" title="Maximize"></button>
-        </div>
-        <button class="sidebar-toggle" @click="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? 'Expand' : 'Collapse'">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="9" y1="3" x2="9" y2="21"></line>
-            <polyline v-if="sidebarCollapsed" points="14 9 17 12 14 15"></polyline>
-            <polyline v-else points="17 9 14 12 17 15"></polyline>
-          </svg>
-        </button>
+        <div class="titlebar-drag-region"></div>
       </div>
 
       <div class="sidebar-content">
-        <div class="sidebar-header">
-          <h1 v-if="!sidebarCollapsed">AllWaysYou</h1>
-          <button class="new-chat-btn" @click="newChat" :title="sidebarCollapsed ? 'New Chat' : ''">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
+        <!-- Brand row: logo + name + toggle -->
+        <div class="sidebar-brand">
+          <div class="brand-logo">
+            <svg width="32" height="32" viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#6366F1"/>
+                  <stop offset="100%" stop-color="#06B6D4"/>
+                </linearGradient>
+              </defs>
+              <rect width="100" height="100" rx="20" fill="url(#logoGradient)"/>
+              <path d="M30 65 L50 35 L70 65" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <circle cx="50" cy="70" r="5" fill="white"/>
             </svg>
-            <span v-if="!sidebarCollapsed">New Chat</span>
+          </div>
+          <span v-if="!sidebarCollapsed" class="brand-name">AllWaysYou</span>
+          <button class="sidebar-toggle" @click.stop="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? 'Expand' : 'Collapse'">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="9" y1="3" x2="9" y2="21"></line>
+              <polyline v-if="sidebarCollapsed" points="14 9 17 12 14 15"></polyline>
+              <polyline v-else points="17 9 14 12 17 15"></polyline>
+            </svg>
           </button>
         </div>
+
+        <button class="new-chat-btn" @click="newChat" :title="sidebarCollapsed ? 'New Chat' : ''">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span v-if="!sidebarCollapsed">New Chat</span>
+        </button>
 
         <div class="session-list">
           <div

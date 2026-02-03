@@ -103,7 +103,8 @@ body {
   display: flex;
   height: 100vh;
   overflow: hidden;
-  background: #1a1b26;
+  background: var(--bg-secondary);
+  border-radius: 10px; /* Match macOS window corner radius */
 }
 
 /* App container - fills entire window */
@@ -128,83 +129,18 @@ body {
   transition: width 0.2s ease;
 }
 
-/* Sidebar titlebar - for window controls */
+/* Sidebar titlebar - native macOS traffic lights */
 .sidebar-titlebar {
   height: 52px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 12px;
   -webkit-app-region: drag;
   flex-shrink: 0;
 }
 
-/* Custom window control buttons */
-.window-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  -webkit-app-region: no-drag;
-}
-
-.window-btn {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  position: relative;
-}
-
-.window-btn.close {
-  background: #FF5F57;
-}
-
-.window-btn.minimize {
-  background: #FFBD2E;
-}
-
-.window-btn.maximize {
-  background: #28C840;
-}
-
-.window-btn:hover {
-  filter: brightness(0.9);
-}
-
-/* Show symbols on hover */
-.window-controls:hover .window-btn::after {
-  opacity: 1;
-}
-
-.window-btn::after {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 8px;
-  font-weight: bold;
-  color: rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.window-btn.close::after {
-  content: '×';
-  font-size: 10px;
-}
-
-.window-btn.minimize::after {
-  content: '−';
-}
-
-.window-btn.maximize::after {
-  content: '+';
-}
-
-.app-container.sidebar-collapsed .sidebar-titlebar {
-  justify-content: center;
+.titlebar-drag-region {
+  flex: 1;
 }
 
 .sidebar-content {
@@ -212,6 +148,60 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 0 var(--space-md);
+}
+
+/* Sidebar brand row */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  height: 48px;
+  margin-bottom: var(--space-md);
+  flex-shrink: 0;
+}
+
+.brand-logo {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+}
+
+.brand-logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+.brand-name {
+  flex: 1;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sidebar toggle button */
+.sidebar-toggle {
+  width: 28px;
+  height: 28px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+  background: var(--bg-elevated);
+  border-color: var(--ai-accent);
+  color: var(--ai-accent);
 }
 
 /* Sidebar resize handle */
@@ -231,42 +221,41 @@ body {
   background: var(--ai-accent);
 }
 
-/* Sidebar toggle button */
-.sidebar-toggle {
-  width: 28px;
-  height: 28px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--transition-fast);
-  -webkit-app-region: no-drag;
-  flex-shrink: 0;
-}
-
-.sidebar-toggle:hover {
-  background: var(--bg-elevated);
-  border-color: var(--ai-accent);
-  color: var(--ai-accent);
-}
-
 /* Sidebar collapsed state */
 .app-container.sidebar-collapsed .sidebar {
-  width: 72px !important;
+  width: 100px !important;
 }
 
-
-.app-container.sidebar-collapsed .sidebar-header {
-  padding: var(--space-sm);
+.app-container.sidebar-collapsed .sidebar-content {
+  padding: 0 var(--space-sm);
   align-items: center;
 }
 
-.app-container.sidebar-collapsed .sidebar-header h1 {
-  display: none;
+.app-container.sidebar-collapsed .sidebar-brand {
+  justify-content: center;
+  position: relative;
+  padding: 0;
+}
+
+.app-container.sidebar-collapsed .brand-logo {
+  transition: opacity var(--transition-fast);
+}
+
+.app-container.sidebar-collapsed .sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.app-container.sidebar-collapsed .sidebar-brand:hover .brand-logo {
+  opacity: 0;
+}
+
+.app-container.sidebar-collapsed .sidebar-brand:hover .sidebar-toggle {
+  opacity: 1;
 }
 
 .app-container.sidebar-collapsed .new-chat-btn {
@@ -278,7 +267,7 @@ body {
 }
 
 .app-container.sidebar-collapsed .session-list {
-  padding: var(--space-xs);
+  padding: 0;
   align-items: center;
 }
 
@@ -353,7 +342,9 @@ body {
 
 .new-chat-btn {
   width: 100%;
-  padding: var(--space-md);
+  height: 48px;
+  padding: 0 var(--space-md);
+  margin-bottom: var(--space-sm);
   background: linear-gradient(135deg, var(--ai-accent) 0%, var(--ai-accent-dark) 100%);
   color: white;
   border: none;
@@ -369,6 +360,7 @@ body {
   box-shadow: var(--shadow-sm), 0 0 0 0 var(--ai-accent-glow);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .new-chat-btn::before {
@@ -399,11 +391,12 @@ body {
 .session-list {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-sm);
+  padding: 0;
 }
 
 .session-item {
-  padding: var(--space-sm) var(--space-md);
+  height: 48px;
+  padding: 0 var(--space-md);
   margin-bottom: var(--space-xs);
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -413,6 +406,7 @@ body {
   gap: var(--space-sm);
   border: 1px solid transparent;
   position: relative;
+  flex-shrink: 0;
 }
 
 .session-icon {
@@ -480,7 +474,8 @@ body {
 
 /* Settings Button - Enhanced */
 .settings-btn {
-  padding: var(--space-md) var(--space-lg);
+  height: 48px;
+  padding: 0 var(--space-lg);
   margin: var(--space-sm);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
@@ -490,6 +485,7 @@ body {
   text-align: left;
   font-size: 0.9375rem;
   font-weight: 500;
+  flex-shrink: 0;
   transition: all var(--transition-normal);
   display: flex;
   align-items: center;
