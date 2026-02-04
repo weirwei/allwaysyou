@@ -17,28 +17,76 @@ import (
 
 // ChatService handles chat interactions
 type ChatService struct {
-	configService  *ConfigService
-	sessionRepo    *repository.SessionRepository
-	memoryManager  *memory.DefaultManager
-	adapterFactory *adapter.AdapterFactory
-	llmConfig      config.LLMDefaults
+	configService      *ConfigService
+	modelConfigService *ModelConfigService
+	providerService    *ProviderService
+	sessionRepo        *repository.SessionRepository
+	memoryManager      *memory.DefaultManager
+	adapterFactory     *adapter.AdapterFactory
+	llmConfig          config.LLMDefaults
 }
 
 // NewChatService creates a new chat service
 func NewChatService(
 	configService *ConfigService,
+	modelConfigService *ModelConfigService,
+	providerService *ProviderService,
 	sessionRepo *repository.SessionRepository,
 	memoryManager *memory.DefaultManager,
 	adapterFactory *adapter.AdapterFactory,
 	llmCfg config.LLMDefaults,
 ) *ChatService {
 	return &ChatService{
-		configService:  configService,
-		sessionRepo:    sessionRepo,
-		memoryManager:  memoryManager,
-		adapterFactory: adapterFactory,
-		llmConfig:      llmCfg,
+		configService:      configService,
+		modelConfigService: modelConfigService,
+		providerService:    providerService,
+		sessionRepo:        sessionRepo,
+		memoryManager:      memoryManager,
+		adapterFactory:     adapterFactory,
+		llmConfig:          llmCfg,
 	}
+}
+
+// getModelConfigAndAPIKey gets the model config and decrypts the API key
+// It first tries to use the new ModelConfig/Provider structure, falls back to LLMConfig
+func (s *ChatService) getModelConfigAndAPIKey(configID string, configType model.ConfigType) (providerType model.ProviderType, apiKey, baseURL, modelName string, maxTokens int, temperature float64, configIDOut string, err error) {
+	// First try the new ModelConfig structure
+	var modelConfig *model.ModelConfig
+	if configID != "" {
+		modelConfig, err = s.modelConfigService.GetByID(configID)
+	} else {
+		modelConfig, err = s.modelConfigService.GetDefaultByType(configType)
+	}
+
+	if err == nil && modelConfig != nil && modelConfig.Provider != nil {
+		// Use new structure
+		apiKey, err = s.providerService.GetDecryptedAPIKey(modelConfig.ProviderID)
+		if err != nil {
+			return "", "", "", "", 0, 0, "", fmt.Errorf("failed to decrypt API key: %w", err)
+		}
+		return modelConfig.Provider.Type, apiKey, modelConfig.Provider.BaseURL, modelConfig.Model, modelConfig.MaxTokens, modelConfig.Temperature, modelConfig.ID, nil
+	}
+
+	// Fall back to legacy LLMConfig
+	var llmConfig *model.LLMConfig
+	if configID != "" {
+		llmConfig, err = s.configService.GetByID(configID)
+	} else {
+		llmConfig, err = s.configService.GetDefaultByType(configType)
+	}
+	if err != nil {
+		return "", "", "", "", 0, 0, "", fmt.Errorf("failed to get config: %w", err)
+	}
+	if llmConfig == nil {
+		return "", "", "", "", 0, 0, "", fmt.Errorf("no LLM config available")
+	}
+
+	apiKey, err = s.configService.DecryptAPIKey(llmConfig.APIKey)
+	if err != nil {
+		return "", "", "", "", 0, 0, "", fmt.Errorf("failed to decrypt API key: %w", err)
+	}
+
+	return llmConfig.Provider, apiKey, llmConfig.BaseURL, llmConfig.Model, llmConfig.MaxTokens, llmConfig.Temperature, llmConfig.ID, nil
 }
 
 // Chat processes a chat request and returns a response
@@ -47,41 +95,24 @@ func (s *ChatService) Chat(ctx context.Context, req *model.ChatRequest) (*model.
 		req.SessionID, req.ConfigID, len(req.Messages))
 
 	// Get LLM config
-	var llmConfig *model.LLMConfig
-	var err error
-
-	if req.ConfigID != "" {
-		llmConfig, err = s.configService.GetByID(req.ConfigID)
-	} else {
-		llmConfig, err = s.configService.GetDefaultByType(model.ConfigTypeChat)
-	}
+	providerType, apiKey, baseURL, modelName, maxTokens, temperature, configID, err := s.getModelConfigAndAPIKey(req.ConfigID, model.ConfigTypeChat)
 	if err != nil {
 		log.Printf("[ChatService:Chat] Error getting config: %v", err)
-		return nil, fmt.Errorf("failed to get config: %w", err)
-	}
-	if llmConfig == nil {
-		log.Printf("[ChatService:Chat] Error: no LLM config available")
-		return nil, fmt.Errorf("no LLM config available")
+		return nil, err
 	}
 	log.Printf("[ChatService:Chat] Using config - ID=%s, Provider=%s, Model=%s",
-		llmConfig.ID, llmConfig.Provider, llmConfig.Model)
-
-	// Decrypt API key
-	apiKey, err := s.configService.DecryptAPIKey(llmConfig.APIKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt API key: %w", err)
-	}
+		configID, providerType, modelName)
 
 	// Create adapter
 	adapterCfg := adapter.AdapterConfig{
 		APIKey:      apiKey,
-		BaseURL:     llmConfig.BaseURL,
-		Model:       llmConfig.Model,
-		MaxTokens:   llmConfig.MaxTokens,
-		Temperature: llmConfig.Temperature,
+		BaseURL:     baseURL,
+		Model:       modelName,
+		MaxTokens:   maxTokens,
+		Temperature: temperature,
 	}
 
-	llmAdapter, err := s.adapterFactory.Create(llmConfig.Provider, adapterCfg)
+	llmAdapter, err := s.adapterFactory.Create(providerType, adapterCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create adapter: %w", err)
 	}
@@ -99,7 +130,7 @@ func (s *ChatService) Chat(ctx context.Context, req *model.ChatRequest) (*model.
 		session = &model.Session{
 			ID:        uuid.New().String(),
 			Title:     generateTitle(req.Messages, s.llmConfig.TitleMaxLength),
-			ConfigID:  llmConfig.ID,
+			ConfigID:  configID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -171,41 +202,24 @@ func (s *ChatService) ChatStream(ctx context.Context, req *model.ChatRequest) (<
 		req.SessionID, req.ConfigID, len(req.Messages))
 
 	// Get LLM config
-	var llmConfig *model.LLMConfig
-	var err error
-
-	if req.ConfigID != "" {
-		llmConfig, err = s.configService.GetByID(req.ConfigID)
-	} else {
-		llmConfig, err = s.configService.GetDefaultByType(model.ConfigTypeChat)
-	}
+	providerType, apiKey, baseURL, modelName, maxTokens, temperature, configID, err := s.getModelConfigAndAPIKey(req.ConfigID, model.ConfigTypeChat)
 	if err != nil {
 		log.Printf("[ChatService:ChatStream] Error getting config: %v", err)
-		return nil, "", fmt.Errorf("failed to get config: %w", err)
-	}
-	if llmConfig == nil {
-		log.Printf("[ChatService:ChatStream] Error: no LLM config available")
-		return nil, "", fmt.Errorf("no LLM config available")
+		return nil, "", err
 	}
 	log.Printf("[ChatService:ChatStream] Using config - ID=%s, Provider=%s, Model=%s",
-		llmConfig.ID, llmConfig.Provider, llmConfig.Model)
-
-	// Decrypt API key
-	apiKey, err := s.configService.DecryptAPIKey(llmConfig.APIKey)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to decrypt API key: %w", err)
-	}
+		configID, providerType, modelName)
 
 	// Create adapter
 	adapterCfg := adapter.AdapterConfig{
 		APIKey:      apiKey,
-		BaseURL:     llmConfig.BaseURL,
-		Model:       llmConfig.Model,
-		MaxTokens:   llmConfig.MaxTokens,
-		Temperature: llmConfig.Temperature,
+		BaseURL:     baseURL,
+		Model:       modelName,
+		MaxTokens:   maxTokens,
+		Temperature: temperature,
 	}
 
-	llmAdapter, err := s.adapterFactory.Create(llmConfig.Provider, adapterCfg)
+	llmAdapter, err := s.adapterFactory.Create(providerType, adapterCfg)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create adapter: %w", err)
 	}
@@ -223,7 +237,7 @@ func (s *ChatService) ChatStream(ctx context.Context, req *model.ChatRequest) (<
 		session = &model.Session{
 			ID:        uuid.New().String(),
 			Title:     generateTitle(req.Messages, s.llmConfig.TitleMaxLength),
-			ConfigID:  llmConfig.ID,
+			ConfigID:  configID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}

@@ -2,7 +2,8 @@
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { marked } from 'marked'
 import * as api from './api'
-import type { Message, Session, LLMConfig, CreateConfigRequest, UpdateConfigRequest, ConfigType, Knowledge } from './api'
+import { getApiPort, setApiPort, getServerPort, saveServerPort } from './api'
+import type { Message, Session, Provider, ModelConfig, CreateProviderRequest, UpdateProviderRequest, CreateModelConfigRequest, UpdateModelConfigRequest, ConfigType, ProviderType, Knowledge, LLMConfig, CreateConfigRequest, UpdateConfigRequest } from './api'
 
 // State
 const sessions = ref<Session[]>([])
@@ -11,13 +12,25 @@ const messages = ref<Message[]>([])
 const inputText = ref('')
 const isLoading = ref(false)
 const currentView = ref<'chat' | 'settings'>('chat')
-const configs = ref<LLMConfig[]>([])
-const showAddConfig = ref(false)
-const editingConfigId = ref<string | null>(null)
-const testingConfigId = ref<string | null>(null)
 const sidebarCollapsed = ref(false)
 const sidebarWidth = ref(280)
 const isResizing = ref(false)
+
+// Provider & Model state
+const providers = ref<Provider[]>([])
+const models = ref<ModelConfig[]>([])
+const selectedProviderId = ref<string | null>(null)
+const providerSearchQuery = ref('')
+const showAddProvider = ref(false)
+const editingProviderId = ref<string | null>(null)
+const showAddModel = ref(false)
+const editingModelId = ref<string | null>(null)
+const testingProviderId = ref<string | null>(null)
+const testingModelId = ref<string | null>(null)
+const showApiKey = ref(false)
+
+// Legacy config state (for backward compatibility)
+const configs = ref<LLMConfig[]>([])
 
 // Knowledge state
 const knowledgeList = ref<Knowledge[]>([])
@@ -27,6 +40,9 @@ const newKnowledgeContent = ref('')
 
 // Theme state
 const currentTheme = ref('default')
+
+// API settings
+const apiPort = ref(getApiPort())
 const themes = [
   { id: 'default', name: 'Default', preview: ['#1A1A2E', '#6366F1', '#06B6D4'] },
   { id: 'monokai', name: 'Monokai', preview: ['#272822', '#f92672', '#a6e22e'] },
@@ -37,28 +53,100 @@ const themes = [
 ]
 
 // Settings tab state
-type SettingsTab = 'chat' | 'summarize' | 'embedding' | 'knowledge' | 'theme'
-const currentSettingsTab = ref<SettingsTab>('chat')
+type SettingsTab = 'model' | 'system' | 'knowledge' | 'port' | 'theme'
+const currentSettingsTab = ref<SettingsTab>('model')
 const settingsTabs: { id: SettingsTab; name: string; icon: string }[] = [
-  { id: 'chat', name: '聊天模型', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
-  { id: 'summarize', name: '总结模型', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
-  { id: 'embedding', name: '向量模型', icon: 'M12 2L2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5' },
-  { id: 'knowledge', name: '记忆管理', icon: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z' },
+  { id: 'model', name: '模型配置', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+  { id: 'system', name: '系统模型', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+  { id: 'knowledge', name: '知识管理', icon: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z' },
+  { id: 'port', name: '端口设置', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { id: 'theme', name: '主题', icon: 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z' },
 ]
 
-// Config type for model tabs
-const currentConfigTab = computed<ConfigType>(() => {
-  if (currentSettingsTab.value === 'chat' || currentSettingsTab.value === 'summarize' || currentSettingsTab.value === 'embedding') {
-    return currentSettingsTab.value
-  }
-  return 'chat'
+// System model state
+const showAddSystemModel = ref(false)
+const editingSystemModelId = ref<string | null>(null)
+const systemModelType = ref<'summarize' | 'embedding'>('summarize')
+
+// Provider form
+const newProvider = ref<CreateProviderRequest>({
+  name: '',
+  type: 'openai',
+  api_key: '',
+  base_url: '',
+  enabled: true
 })
 
-// Filtered configs by current tab
-const filteredConfigs = computed(() =>
-  configs.value.filter(c => c.config_type === currentConfigTab.value)
+// Model form
+const newModel = ref<CreateModelConfigRequest>({
+  provider_id: '',
+  model: '',
+  max_tokens: 4096,
+  temperature: 0.7,
+  config_type: 'chat',
+  is_default: false
+})
+
+// Computed
+const selectedProvider = computed(() =>
+  providers.value.find(p => p.id === selectedProviderId.value)
 )
+
+const filteredProviders = computed(() => {
+  if (!providerSearchQuery.value) return providers.value
+  const query = providerSearchQuery.value.toLowerCase()
+  return providers.value.filter(p =>
+    p.name.toLowerCase().includes(query) ||
+    p.type.toLowerCase().includes(query)
+  )
+})
+
+const providerModels = computed(() => {
+  if (!selectedProviderId.value) return []
+  return models.value.filter(m => m.provider_id === selectedProviderId.value)
+})
+
+const chatModels = computed(() => {
+  return providerModels.value.filter(m => m.config_type === 'chat')
+})
+
+// All models by type (for system models tab)
+const summarizeModels = computed(() => {
+  return models.value.filter(m => m.config_type === 'summarize')
+})
+
+const embeddingModels = computed(() => {
+  return models.value.filter(m => m.config_type === 'embedding')
+})
+
+const apiUrlPreview = computed(() => {
+  const base = newProvider.value.base_url || getDefaultBaseUrl(newProvider.value.type)
+  if (!base) return ''
+  const cleanBase = base.replace(/\/$/, '')
+  return `${cleanBase}/chat/completions`
+})
+
+function getDefaultBaseUrl(type: ProviderType): string {
+  switch (type) {
+    case 'openai': return 'https://api.openai.com/v1'
+    case 'claude': return 'https://api.anthropic.com/v1'
+    case 'azure': return ''
+    case 'ollama': return 'http://localhost:11434/v1'
+    case 'custom': return ''
+    default: return ''
+  }
+}
+
+function getProviderIcon(type: ProviderType): string {
+  switch (type) {
+    case 'openai': return 'O'
+    case 'claude': return 'C'
+    case 'azure': return 'A'
+    case 'ollama': return '🦙'
+    case 'custom': return '⚙️'
+    default: return '?'
+  }
+}
 
 // Theme functions
 function loadTheme() {
@@ -77,6 +165,33 @@ function setTheme(themeId: string) {
   applyTheme()
 }
 
+// API port functions
+async function loadApiPort() {
+  try {
+    const port = await getServerPort()
+    apiPort.value = String(port)
+    setApiPort(String(port)) // Sync to localStorage
+  } catch (e) {
+    // Fallback to localStorage
+    apiPort.value = getApiPort()
+  }
+}
+
+async function saveApiPort() {
+  const port = apiPort.value.trim()
+  if (!/^\d+$/.test(port) || parseInt(port) < 1 || parseInt(port) > 65535) {
+    showToast('请输入有效的端口号 (1-65535)', 'error')
+    return
+  }
+  try {
+    await saveServerPort(parseInt(port))
+    setApiPort(port) // Also save to localStorage for frontend use
+    showToast('API 端口已保存，重启应用后生效', 'success')
+  } catch (e: any) {
+    showToast(e.message || '保存失败', 'error')
+  }
+}
+
 // Sidebar resize
 function startResize(e: MouseEvent) {
   isResizing.value = true
@@ -92,13 +207,11 @@ function handleResize(e: MouseEvent) {
   const maxExpandedWidth = 400
 
   if (sidebarCollapsed.value) {
-    // Currently collapsed - expand if dragged past threshold
     if (newWidth >= collapseThreshold) {
       sidebarCollapsed.value = false
       sidebarWidth.value = Math.max(minExpandedWidth, Math.min(newWidth, maxExpandedWidth))
     }
   } else {
-    // Currently expanded
     if (newWidth < collapseThreshold) {
       sidebarCollapsed.value = true
     } else {
@@ -133,34 +246,35 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
   if (cmdOrCtrl) {
     switch (e.key.toLowerCase()) {
-      case 'w': // Close window
+      case 'w':
         e.preventDefault()
         windowClose()
         break
-      case 'm': // Minimize
+      case 'm':
         e.preventDefault()
         windowMinimize()
         break
-      case 'n': // New chat
+      case 'n':
         e.preventDefault()
         newChat()
         break
-      case ',': // Open settings
+      case ',':
         e.preventDefault()
         currentView.value = 'settings'
         break
-      case 'b': // Toggle sidebar
+      case 'b':
         e.preventDefault()
         sidebarCollapsed.value = !sidebarCollapsed.value
         break
     }
   }
 
-  // Escape to go back
   if (e.key === 'Escape') {
     if (currentView.value === 'settings') {
-      if (showAddConfig.value) {
-        resetConfigForm()
+      if (showAddProvider.value) {
+        resetProviderForm()
+      } else if (showAddModel.value) {
+        resetModelForm()
       } else if (showAddKnowledge.value) {
         resetKnowledgeForm()
       } else {
@@ -182,19 +296,6 @@ function showToast(message: string, type: 'error' | 'success' | 'info' = 'error'
   }, 4000)
 }
 
-// New config form
-const newConfig = ref<CreateConfigRequest>({
-  name: '',
-  provider: 'openai',
-  api_key: '',
-  base_url: '',
-  model: 'gpt-4o-mini',
-  max_tokens: 4096,
-  temperature: 0.7,
-  is_default: true,
-  config_type: 'chat'
-})
-
 // Refs
 const chatContainer = ref<HTMLElement | null>(null)
 
@@ -209,6 +310,26 @@ async function loadSessions() {
     sessions.value = await api.getSessions()
   } catch (e) {
     console.error('Failed to load sessions:', e)
+  }
+}
+
+async function loadProviders() {
+  try {
+    providers.value = await api.getProviders()
+    // Auto-select first provider if none selected
+    if (providers.value.length > 0 && !selectedProviderId.value) {
+      selectedProviderId.value = providers.value[0].id
+    }
+  } catch (e) {
+    console.error('Failed to load providers:', e)
+  }
+}
+
+async function loadModels() {
+  try {
+    models.value = await api.getModels()
+  } catch (e) {
+    console.error('Failed to load models:', e)
   }
 }
 
@@ -253,7 +374,6 @@ async function deleteMessage(index: number) {
   const msg = messages.value[index]
   if (!msg) return
 
-  // For messages without ID (streaming messages not yet saved), just remove from UI
   if (!msg.id) {
     messages.value.splice(index, 1)
     return
@@ -279,7 +399,11 @@ function newChat() {
 async function sendMessage() {
   if (!inputText.value.trim() || isLoading.value) return
 
-  if (configs.value.length === 0) {
+  // Check if we have any config (new or legacy)
+  const hasNewConfig = models.value.some(m => m.config_type === 'chat')
+  const hasLegacyConfig = configs.value.some(c => c.config_type === 'chat')
+
+  if (!hasNewConfig && !hasLegacyConfig) {
     showToast('Please add an LLM configuration first', 'info')
     currentView.value = 'settings'
     return
@@ -292,24 +416,20 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    // Add placeholder for assistant message
     messages.value.push({ role: 'assistant', content: '' })
     const assistantIndex = messages.value.length - 1
 
-    // Stream response
     const { stream, sessionId } = await api.chatStream({
       session_id: currentSessionId.value || undefined,
       messages: [userMessage]
     })
 
-    // Update session ID immediately if this is a new chat
     if (sessionId && !currentSessionId.value) {
       currentSessionId.value = sessionId
     }
 
     for await (const chunk of stream) {
       if (chunk.delta) {
-        // Update through reactive array to ensure Vue detects changes
         messages.value[assistantIndex].content += chunk.delta
         scrollToBottom()
       }
@@ -318,114 +438,132 @@ async function sendMessage() {
       }
     }
 
-    // Reload sessions to get the new/updated session
     await loadSessions()
   } catch (e: any) {
     console.error('Chat failed:', e)
-    messages.value.pop() // Remove empty assistant message
+    messages.value.pop()
     showToast(e.message || 'Failed to send message')
   } finally {
     isLoading.value = false
   }
 }
 
-function resetConfigForm() {
-  newConfig.value = {
+// Provider management
+function selectProvider(id: string) {
+  selectedProviderId.value = id
+  showAddProvider.value = false
+  showAddModel.value = false
+}
+
+function resetProviderForm() {
+  newProvider.value = {
     name: '',
-    provider: 'openai',
+    type: 'openai',
     api_key: '',
     base_url: '',
-    model: currentConfigTab.value === 'embedding' ? 'text-embedding-3-small' : 'gpt-4o-mini',
-    max_tokens: 4096,
-    temperature: 0.7,
-    is_default: filteredConfigs.value.length === 0,
-    config_type: currentConfigTab.value
+    enabled: true
   }
-  editingConfigId.value = null
-  showAddConfig.value = false
+  editingProviderId.value = null
+  showAddProvider.value = false
+  showApiKey.value = false
 }
 
-function editConfig(config: LLMConfig) {
-  editingConfigId.value = config.id
-  newConfig.value = {
-    name: config.name,
-    provider: config.provider,
-    api_key: '', // Don't show existing API key for security
-    base_url: config.base_url || '',
-    model: config.model,
-    max_tokens: config.max_tokens,
-    temperature: config.temperature,
-    is_default: config.is_default,
-    config_type: config.config_type
+function startAddProvider() {
+  newProvider.value = {
+    name: '',
+    type: 'openai',
+    api_key: '',
+    base_url: '',
+    enabled: true
   }
-  showAddConfig.value = true
+  editingProviderId.value = null
+  showApiKey.value = false
+  showAddProvider.value = true
 }
 
-async function saveConfig() {
-  if (!newConfig.value.name) {
-    showToast('Please fill in the name field', 'info')
+function editProvider(provider: Provider) {
+  editingProviderId.value = provider.id
+  newProvider.value = {
+    name: provider.name,
+    type: provider.type,
+    api_key: '',
+    base_url: provider.base_url || '',
+    enabled: provider.enabled
+  }
+  showAddProvider.value = true
+}
+
+async function saveProvider() {
+  if (!newProvider.value.name) {
+    showToast('请填写供应商名称', 'info')
     return
   }
 
-  // For new config, API key is required (except for Ollama)
-  if (!editingConfigId.value && !newConfig.value.api_key && newConfig.value.provider !== 'ollama') {
-    showToast('Please fill in the API key field', 'info')
+  if (!editingProviderId.value && !newProvider.value.api_key && newProvider.value.type !== 'ollama') {
+    showToast('请填写 API Key', 'info')
     return
   }
 
-  // For Ollama, set a placeholder API key if not provided
-  const configToSave = { ...newConfig.value }
-  if (configToSave.provider === 'ollama' && !configToSave.api_key) {
-    configToSave.api_key = 'ollama'
+  const providerToSave = { ...newProvider.value }
+  if (providerToSave.type === 'ollama' && !providerToSave.api_key) {
+    providerToSave.api_key = 'ollama'
   }
-  // Set default base URL for Ollama if not provided
-  if (configToSave.provider === 'ollama' && !configToSave.base_url) {
-    configToSave.base_url = 'http://localhost:11434/v1'
+  if (!providerToSave.base_url) {
+    providerToSave.base_url = getDefaultBaseUrl(providerToSave.type)
   }
 
   try {
-    if (editingConfigId.value) {
-      // Update existing config
-      const updateData: UpdateConfigRequest = {
-        name: configToSave.name,
-        provider: configToSave.provider,
-        base_url: configToSave.base_url,
-        model: configToSave.model,
-        max_tokens: configToSave.max_tokens,
-        temperature: configToSave.temperature,
-        is_default: configToSave.is_default
+    if (editingProviderId.value) {
+      const updateData: UpdateProviderRequest = {
+        name: providerToSave.name,
+        type: providerToSave.type,
+        base_url: providerToSave.base_url,
+        enabled: providerToSave.enabled
       }
-      // Only include API key if user entered a new one
-      if (configToSave.api_key) {
-        updateData.api_key = configToSave.api_key
+      if (providerToSave.api_key) {
+        updateData.api_key = providerToSave.api_key
       }
-      await api.updateConfig(editingConfigId.value, updateData)
+      await api.updateProvider(editingProviderId.value, updateData)
+      showToast('供应商已更新', 'success')
     } else {
-      // Create new config
-      await api.createConfig(configToSave)
+      const created = await api.createProvider(providerToSave)
+      selectedProviderId.value = created.id
+      showToast('供应商已添加', 'success')
     }
-    await loadConfigs()
-    resetConfigForm()
+    await loadProviders()
+    resetProviderForm()
   } catch (e: any) {
-    showToast(e.message || 'Failed to save config')
+    showToast(e.message || '保存失败')
   }
 }
 
-async function removeConfig(id: string) {
+async function removeProvider(id: string) {
   try {
-    await api.deleteConfig(id)
-    await loadConfigs()
-    showToast('配置已删除', 'success')
+    await api.deleteProvider(id)
+    await Promise.all([loadProviders(), loadModels()])
+    if (selectedProviderId.value === id) {
+      selectedProviderId.value = providers.value.length > 0 ? providers.value[0].id : null
+    }
+    showToast('供应商已删除', 'success')
   } catch (e) {
-    console.error('Failed to delete config:', e)
+    console.error('Failed to delete provider:', e)
     showToast('删除失败')
   }
 }
 
-async function testConfig(id: string) {
-  testingConfigId.value = id
+async function toggleProviderEnabled(id: string, enabled: boolean) {
   try {
-    const result = await api.testConfig(id)
+    await api.updateProvider(id, { enabled })
+    await loadProviders()
+  } catch (e) {
+    console.error('Failed to toggle provider:', e)
+  }
+}
+
+async function testProvider(id: string) {
+  testingProviderId.value = id
+  try {
+    const result = await api.testProvider(id)
     if (result.success) {
       showToast('连接成功', 'success')
     } else {
@@ -434,16 +572,180 @@ async function testConfig(id: string) {
   } catch (e: any) {
     showToast(e.message || '测试失败')
   } finally {
-    testingConfigId.value = null
+    testingProviderId.value = null
   }
 }
 
-async function selectConfig(id: string) {
+// Model management
+function resetModelForm() {
+  newModel.value = {
+    provider_id: selectedProviderId.value || '',
+    model: '',
+    max_tokens: 4096,
+    temperature: 0.7,
+    config_type: 'chat',
+    is_default: false
+  }
+  editingModelId.value = null
+  showAddModel.value = false
+}
+
+function startAddModel() {
+  newModel.value = {
+    provider_id: selectedProviderId.value || '',
+    model: '',
+    max_tokens: 4096,
+    temperature: 0.7,
+    config_type: 'chat',
+    is_default: !chatModels.value.length
+  }
+  editingModelId.value = null
+  showAddModel.value = true
+}
+
+// System model functions
+function startAddSystemModel(type: 'summarize' | 'embedding') {
+  systemModelType.value = type
+  const existingModels = type === 'summarize' ? summarizeModels.value : embeddingModels.value
+  newModel.value = {
+    provider_id: providers.value.length > 0 ? providers.value[0].id : '',
+    model: '',
+    max_tokens: type === 'embedding' ? 8192 : 4096,
+    temperature: type === 'embedding' ? 0 : 0.7,
+    config_type: type,
+    is_default: !existingModels.length
+  }
+  editingSystemModelId.value = null
+  showAddSystemModel.value = true
+}
+
+function editSystemModel(model: ModelConfig) {
+  systemModelType.value = model.config_type as 'summarize' | 'embedding'
+  editingSystemModelId.value = model.id
+  newModel.value = {
+    provider_id: model.provider_id,
+    model: model.model,
+    max_tokens: model.max_tokens,
+    temperature: model.temperature,
+    config_type: model.config_type,
+    is_default: model.is_default
+  }
+  showAddSystemModel.value = true
+}
+
+function resetSystemModelForm() {
+  showAddSystemModel.value = false
+  editingSystemModelId.value = null
+}
+
+async function saveSystemModel() {
+  if (!newModel.value.model) {
+    showToast('请填写模型名称', 'info')
+    return
+  }
+  if (!newModel.value.provider_id) {
+    showToast('请选择供应商', 'info')
+    return
+  }
+
   try {
-    await api.setDefaultConfig(id)
-    await loadConfigs()
+    if (editingSystemModelId.value) {
+      const updateData: UpdateModelConfigRequest = {
+        model: newModel.value.model,
+        max_tokens: newModel.value.max_tokens,
+        temperature: newModel.value.temperature,
+        config_type: newModel.value.config_type,
+        is_default: newModel.value.is_default
+      }
+      await api.updateModel(editingSystemModelId.value, updateData)
+      showToast('模型已更新', 'success')
+    } else {
+      await api.createModel(newModel.value)
+      showToast('模型已添加', 'success')
+    }
+    await loadModels()
+    resetSystemModelForm()
+  } catch (e: any) {
+    showToast(e.message || '保存失败')
+  }
+}
+
+function editModel(model: ModelConfig) {
+  editingModelId.value = model.id
+  newModel.value = {
+    provider_id: model.provider_id,
+    model: model.model,
+    max_tokens: model.max_tokens,
+    temperature: model.temperature,
+    config_type: model.config_type,
+    is_default: model.is_default
+  }
+  showAddModel.value = true
+}
+
+async function saveModel() {
+  if (!newModel.value.model) {
+    showToast('请填写模型名称', 'info')
+    return
+  }
+
+  try {
+    if (editingModelId.value) {
+      const updateData: UpdateModelConfigRequest = {
+        model: newModel.value.model,
+        max_tokens: newModel.value.max_tokens,
+        temperature: newModel.value.temperature,
+        config_type: newModel.value.config_type,
+        is_default: newModel.value.is_default
+      }
+      await api.updateModel(editingModelId.value, updateData)
+      showToast('模型已更新', 'success')
+    } else {
+      await api.createModel(newModel.value)
+      showToast('模型已添加', 'success')
+    }
+    await loadModels()
+    resetModelForm()
+  } catch (e: any) {
+    showToast(e.message || '保存失败')
+  }
+}
+
+async function removeModel(id: string) {
+  try {
+    await api.deleteModel(id)
+    await loadModels()
+    showToast('模型已删除', 'success')
   } catch (e) {
-    console.error('Failed to set default config:', e)
+    console.error('Failed to delete model:', e)
+    showToast('删除失败')
+  }
+}
+
+async function setDefaultModel(id: string) {
+  try {
+    await api.setDefaultModel(id)
+    await loadModels()
+    showToast('已设为默认', 'success')
+  } catch (e) {
+    console.error('Failed to set default model:', e)
+    showToast('设置失败')
+  }
+}
+
+async function testModel(id: string) {
+  testingModelId.value = id
+  try {
+    const result = await api.testModel(id)
+    if (result.success) {
+      showToast('测试成功', 'success')
+    } else {
+      showToast(result.error || '测试失败')
+    }
+  } catch (e: any) {
+    showToast(e.message || '测试失败')
+  } finally {
+    testingModelId.value = null
   }
 }
 
@@ -529,12 +831,11 @@ watch(currentSettingsTab, (newTab) => {
 // Lifecycle
 onMounted(async () => {
   loadTheme()
-  // Add global keyboard shortcut listener
+  loadApiPort()
   window.addEventListener('keydown', handleGlobalKeydown)
-  await Promise.all([loadSessions(), loadConfigs(), loadKnowledge()])
+  await Promise.all([loadSessions(), loadProviders(), loadModels(), loadConfigs(), loadKnowledge()])
 })
 
-// Cleanup on unmount
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
 })
@@ -544,13 +845,11 @@ onUnmounted(() => {
   <div class="app-container" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'is-resizing': isResizing }">
     <!-- Sidebar -->
     <div class="sidebar" :style="{ width: sidebarCollapsed ? '100px' : sidebarWidth + 'px' }">
-      <!-- Title bar area - native macOS traffic lights -->
       <div class="sidebar-titlebar">
         <div class="titlebar-drag-region"></div>
       </div>
 
       <div class="sidebar-content">
-        <!-- Brand row: logo + name + toggle -->
         <div class="sidebar-brand">
           <div class="brand-logo">
             <img src="./assets/logo.svg" alt="AllWaysYou" width="64" height="64" />
@@ -600,7 +899,6 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- Resize handle - always visible -->
       <div
         class="sidebar-resize-handle"
         @mousedown="startResize"
@@ -672,7 +970,6 @@ onUnmounted(() => {
       <!-- Settings View -->
       <template v-else-if="currentView === 'settings'">
         <div class="settings-page">
-          <!-- Titlebar drag region for macOS -->
           <div class="settings-titlebar"></div>
           <div class="settings-header">
             <button class="back-btn" @click="currentView = 'chat'" title="Back to chat">
@@ -690,7 +987,7 @@ onUnmounted(() => {
               :key="tab.id"
               class="settings-tab"
               :class="{ active: currentSettingsTab === tab.id }"
-              @click="currentSettingsTab = tab.id; if (['chat', 'summarize', 'embedding'].includes(tab.id)) { showAddConfig = false; showAddKnowledge = false; } else if (tab.id === 'knowledge') { showAddConfig = false; }"
+              @click="currentSettingsTab = tab.id"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path :d="tab.icon"></path>
@@ -700,165 +997,493 @@ onUnmounted(() => {
           </div>
 
           <div class="settings-content">
-            <!-- Model Config Tabs (chat, summarize, embedding) -->
-            <template v-if="['chat', 'summarize', 'embedding'].includes(currentSettingsTab)">
-              <template v-if="!showAddConfig">
-                <div class="config-list">
-                  <div
-                    v-for="config in filteredConfigs"
-                    :key="config.id"
-                    class="config-item"
-                    :class="{ active: config.is_default }"
-                    @click="selectConfig(config.id)"
-                  >
-                    <div class="config-info">
-                      <div class="config-name">
-                        {{ config.name }}
-                        <span v-if="config.is_default" class="default-badge">Default</span>
-                      </div>
-                      <div class="config-detail">{{ config.provider }} · {{ config.model }}</div>
-                    </div>
-                    <div class="config-actions">
-                      <button
-                        class="btn-icon btn-test"
-                        :class="{ testing: testingConfigId === config.id }"
-                        @click.stop="testConfig(config.id)"
-                        :disabled="testingConfigId === config.id"
-                        title="Test"
-                      >
-                        <svg v-if="testingConfigId !== config.id" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                        </svg>
-                        <svg v-else class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <line x1="12" y1="2" x2="12" y2="6"></line>
-                          <line x1="12" y1="18" x2="12" y2="22"></line>
-                          <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                          <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                          <line x1="2" y1="12" x2="6" y2="12"></line>
-                          <line x1="18" y1="12" x2="22" y2="12"></line>
-                          <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                          <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-                        </svg>
-                      </button>
-                      <button class="btn-icon" @click.stop="editConfig(config)" title="Edit">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                        </svg>
-                      </button>
-                      <button class="btn-icon btn-danger" @click.stop="removeConfig(config.id)" title="Delete">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <polyline points="3 6 5 6 21 6"></polyline>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                      </button>
+            <!-- Model Configuration Tab (New Provider+Model UI) -->
+            <template v-if="currentSettingsTab === 'model'">
+              <div class="model-config-layout">
+                <!-- Left: Provider List -->
+                <div class="provider-list-panel">
+                  <div class="provider-search">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input v-model="providerSearchQuery" placeholder="搜索供应商..." />
+                  </div>
+
+                  <div class="provider-items">
+                    <div
+                      v-for="provider in filteredProviders"
+                      :key="provider.id"
+                      class="provider-item"
+                      :class="{ active: provider.id === selectedProviderId }"
+                      @click="selectProvider(provider.id)"
+                    >
+                      <span class="provider-icon">{{ getProviderIcon(provider.type) }}</span>
+                      <span class="provider-name">{{ provider.name }}</span>
+                      <label class="provider-toggle" @click.stop>
+                        <input
+                          type="checkbox"
+                          :checked="provider.enabled"
+                          @change="toggleProviderEnabled(provider.id, ($event.target as HTMLInputElement).checked)"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
                     </div>
                   </div>
 
-                  <p v-if="filteredConfigs.length === 0" class="empty-config-text">
-                    暂无{{ settingsTabs.find(t => t.id === currentSettingsTab)?.name }}配置
-                  </p>
-                </div>
-
-                <button class="btn-add-config" @click="showAddConfig = true; editingConfigId = null; newConfig.config_type = currentConfigTab">
-                  <span class="icon-wrapper">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <button class="btn-add-provider" @click="startAddProvider()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                       <line x1="12" y1="5" x2="12" y2="19"></line>
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                  </span>
-                  添加{{ settingsTabs.find(t => t.id === currentSettingsTab)?.name }}配置
-                </button>
-              </template>
-
-              <!-- Add/Edit Config Form -->
-              <template v-else>
-                <div class="form-header">
-                  <button class="back-btn" @click="resetConfigForm" title="Back">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="15 18 9 12 15 6"></polyline>
-                    </svg>
+                    添加供应商
                   </button>
-                  <h2>{{ editingConfigId ? '编辑配置' : `添加${settingsTabs.find(t => t.id === currentSettingsTab)?.name}配置` }}</h2>
                 </div>
 
-                <div class="config-form">
-                  <div class="form-group">
-                    <label>Name *</label>
-                    <input v-model="newConfig.name" placeholder="My OpenAI Config" />
-                  </div>
+                <!-- Right: Provider Details & Models -->
+                <div class="provider-detail-panel">
+                  <template v-if="showAddProvider">
+                    <!-- Add/Edit Provider Form -->
+                    <div class="form-header">
+                      <button class="back-btn" @click="resetProviderForm" title="Back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                      </button>
+                      <h2>{{ editingProviderId ? '编辑供应商' : '添加供应商' }}</h2>
+                    </div>
 
-                  <div class="form-group">
-                    <label>Provider *</label>
-                    <select v-model="newConfig.provider">
-                      <option value="openai">OpenAI</option>
-                      <option value="claude">Claude (Anthropic)</option>
-                      <option value="azure">Azure OpenAI</option>
-                      <option value="ollama">Ollama (Local)</option>
-                      <option value="custom">Custom (OpenAI Compatible)</option>
-                    </select>
-                  </div>
+                    <div class="provider-form">
+                      <div class="form-group">
+                        <label>名称 *</label>
+                        <input v-model="newProvider.name" placeholder="例如: My OpenAI" />
+                      </div>
 
-                  <div class="form-group" v-if="newConfig.provider !== 'ollama'">
-                    <label>API Key {{ editingConfigId ? '(leave empty to keep current)' : '*' }}</label>
-                    <input v-model="newConfig.api_key" type="password" :placeholder="editingConfigId ? '••••••••' : 'sk-...'" />
-                  </div>
+                      <div class="form-group">
+                        <label>类型 *</label>
+                        <select v-model="newProvider.type">
+                          <option value="openai">OpenAI</option>
+                          <option value="claude">Claude (Anthropic)</option>
+                          <option value="azure">Azure OpenAI</option>
+                          <option value="ollama">Ollama (本地)</option>
+                          <option value="custom">自定义 (OpenAI 兼容)</option>
+                        </select>
+                      </div>
 
-                  <div class="form-group">
-                    <label>Base URL (optional)</label>
-                    <input v-model="newConfig.base_url" placeholder="https://api.openai.com/v1" />
-                  </div>
+                      <div class="form-group" v-if="newProvider.type !== 'ollama'">
+                        <label>API 密钥 {{ editingProviderId ? '(留空保持不变)' : '*' }}</label>
+                        <div class="api-key-input">
+                          <input
+                            v-model="newProvider.api_key"
+                            :type="showApiKey ? 'text' : 'password'"
+                            :placeholder="editingProviderId ? '••••••••' : 'sk-...'"
+                          />
+                          <button class="btn-icon" @click="showApiKey = !showApiKey" type="button">
+                            <svg v-if="showApiKey" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                              <line x1="1" y1="1" x2="23" y2="23"></line>
+                            </svg>
+                            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                              <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
 
-                  <div class="form-group">
-                    <label>Model *</label>
-                    <input v-model="newConfig.model" placeholder="gpt-4o-mini" />
-                  </div>
+                      <div class="form-group">
+                        <label>API 地址</label>
+                        <input v-model="newProvider.base_url" :placeholder="getDefaultBaseUrl(newProvider.type)" />
+                        <span v-if="apiUrlPreview" class="url-preview">预览: {{ apiUrlPreview }}</span>
+                      </div>
 
-                  <div class="form-group" v-if="currentSettingsTab !== 'embedding'">
-                    <label>Max Tokens</label>
-                    <input v-model.number="newConfig.max_tokens" type="number" />
-                  </div>
+                      <div class="form-actions">
+                        <button class="btn-secondary" @click="resetProviderForm">取消</button>
+                        <button class="btn-primary" @click="saveProvider">{{ editingProviderId ? '更新' : '保存' }}</button>
+                      </div>
+                    </div>
+                  </template>
 
-                  <div class="form-group" v-if="currentSettingsTab !== 'embedding'">
-                    <label>Temperature (0-2)</label>
-                    <input v-model.number="newConfig.temperature" type="number" step="0.1" min="0" max="2" />
-                  </div>
+                  <template v-else-if="selectedProvider">
+                    <!-- Provider Header -->
+                    <div class="provider-header">
+                      <div class="provider-title">
+                        <span class="provider-icon-large">{{ getProviderIcon(selectedProvider.type) }}</span>
+                        <h2>{{ selectedProvider.name }}</h2>
+                      </div>
+                      <div class="provider-actions">
+                        <button
+                          class="btn-icon btn-test"
+                          :class="{ testing: testingProviderId === selectedProvider.id }"
+                          @click="testProvider(selectedProvider.id)"
+                          :disabled="testingProviderId === selectedProvider.id"
+                          title="测试连接"
+                        >
+                          <svg v-if="testingProviderId !== selectedProvider.id" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                          </svg>
+                          <svg v-else class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="2" x2="12" y2="6"></line>
+                            <line x1="12" y1="18" x2="12" y2="22"></line>
+                            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                            <line x1="2" y1="12" x2="6" y2="12"></line>
+                            <line x1="18" y1="12" x2="22" y2="12"></line>
+                            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                          </svg>
+                        </button>
+                        <button class="btn-icon" @click="editProvider(selectedProvider)" title="编辑">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                          </svg>
+                        </button>
+                        <button class="btn-icon btn-danger" @click="removeProvider(selectedProvider.id)" title="删除">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                          </svg>
+                        </button>
+                        <label class="provider-toggle">
+                          <input
+                            type="checkbox"
+                            :checked="selectedProvider.enabled"
+                            @change="toggleProviderEnabled(selectedProvider.id, ($event.target as HTMLInputElement).checked)"
+                          />
+                          <span class="toggle-slider"></span>
+                        </label>
+                      </div>
+                    </div>
 
-                  <div class="form-group" v-if="!editingConfigId || !configs.find(c => c.id === editingConfigId)?.is_default">
-                    <label class="checkbox-label">
-                      <input type="checkbox" v-model="newConfig.is_default" />
-                      <span>Set as default configuration</span>
-                    </label>
-                  </div>
+                    <!-- Provider Info -->
+                    <div class="provider-info">
+                      <div class="info-row">
+                        <span class="info-label">类型</span>
+                        <span class="info-value">{{ selectedProvider.type }}</span>
+                      </div>
+                      <div class="info-row">
+                        <span class="info-label">API 地址</span>
+                        <span class="info-value">{{ selectedProvider.base_url || getDefaultBaseUrl(selectedProvider.type) }}</span>
+                      </div>
+                      <div class="info-row">
+                        <span class="info-label">API 密钥</span>
+                        <span class="info-value">{{ selectedProvider.has_api_key ? '••••••••' : '未设置' }}</span>
+                      </div>
+                    </div>
 
-                  <div class="form-actions">
-                    <button class="btn-secondary" @click="resetConfigForm">Cancel</button>
-                    <button
-                      v-if="editingConfigId"
-                      class="btn-test-config"
-                      :class="{ testing: testingConfigId === editingConfigId }"
-                      :disabled="testingConfigId === editingConfigId"
-                      @click="testConfig(editingConfigId)"
-                    >
-                      <svg v-if="testingConfigId !== editingConfigId" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    <div class="models-divider"></div>
+
+                    <!-- Models Section -->
+                    <template v-if="showAddModel">
+                      <!-- Add/Edit Model Form -->
+                      <div class="form-header">
+                        <button class="back-btn" @click="resetModelForm" title="Back">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                          </svg>
+                        </button>
+                        <h2>{{ editingModelId ? '编辑模型' : '添加模型' }}</h2>
+                      </div>
+
+                      <div class="model-form">
+                        <div class="form-group">
+                          <label>模型名称 *</label>
+                          <input v-model="newModel.model" placeholder="例如: gpt-4o-mini" />
+                        </div>
+
+                        <div class="form-group">
+                          <label>用途 *</label>
+                          <select v-model="newModel.config_type">
+                            <option value="chat">聊天模型</option>
+                            <option value="summarize">总结模型</option>
+                            <option value="embedding">向量模型</option>
+                          </select>
+                        </div>
+
+                        <div class="form-group" v-if="newModel.config_type !== 'embedding'">
+                          <label>最大 Tokens</label>
+                          <input v-model.number="newModel.max_tokens" type="number" />
+                        </div>
+
+                        <div class="form-group" v-if="newModel.config_type !== 'embedding'">
+                          <label>温度 (0-2)</label>
+                          <input v-model.number="newModel.temperature" type="number" step="0.1" min="0" max="2" />
+                        </div>
+
+                        <div class="form-group">
+                          <label class="checkbox-label">
+                            <input type="checkbox" v-model="newModel.is_default" />
+                            <span>设为该类型的默认模型</span>
+                          </label>
+                        </div>
+
+                        <div class="form-actions">
+                          <button class="btn-secondary" @click="resetModelForm">取消</button>
+                          <button class="btn-primary" @click="saveModel">{{ editingModelId ? '更新' : '保存' }}</button>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template v-else>
+                      <div class="models-header">
+                        <h3>聊天模型 ({{ chatModels.length }})</h3>
+                        <button class="btn-add-model" @click="startAddModel()">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                          </svg>
+                          添加模型
+                        </button>
+                      </div>
+
+                      <div class="models-list">
+                        <div
+                          v-for="model in chatModels"
+                          :key="model.id"
+                          class="model-item"
+                        >
+                          <span class="model-name">
+                            {{ model.model }}
+                            <span v-if="model.is_default" class="default-badge">默认</span>
+                          </span>
+                          <div class="model-actions">
+                            <button
+                              class="btn-icon btn-test"
+                              :class="{ testing: testingModelId === model.id }"
+                              @click="testModel(model.id)"
+                              :disabled="testingModelId === model.id"
+                              title="测试"
+                            >
+                              <svg v-if="testingModelId !== model.id" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                              </svg>
+                              <svg v-else class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="2" x2="12" y2="6"></line>
+                                <line x1="12" y1="18" x2="12" y2="22"></line>
+                              </svg>
+                            </button>
+                            <button class="btn-icon" @click="editModel(model)" title="编辑">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                            </button>
+                            <button class="btn-icon btn-danger" @click="removeModel(model.id)" title="删除">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                              </svg>
+                            </button>
+                            <button v-if="!model.is_default" class="btn-default" @click="setDefaultModel(model.id)" title="设为默认">
+                              设为默认
+                            </button>
+                          </div>
+                        </div>
+
+                        <p v-if="chatModels.length === 0" class="empty-models-text">
+                          暂无聊天模型，点击上方按钮添加
+                        </p>
+                      </div>
+                    </template>
+                  </template>
+
+                  <template v-else>
+                    <div class="no-provider-selected">
+                      <p>请从左侧选择或添加一个供应商</p>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <!-- System Models Tab -->
+            <template v-else-if="currentSettingsTab === 'system'">
+              <div class="system-models-container">
+                <template v-if="showAddSystemModel">
+                  <!-- Add/Edit System Model Form -->
+                  <div class="form-header">
+                    <button class="back-btn" @click="resetSystemModelForm" title="Back">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"></polyline>
                       </svg>
-                      <svg v-else class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="2" x2="12" y2="6"></line>
-                        <line x1="12" y1="18" x2="12" y2="22"></line>
-                        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                        <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                        <line x1="2" y1="12" x2="6" y2="12"></line>
-                        <line x1="18" y1="12" x2="22" y2="12"></line>
-                        <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                        <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-                      </svg>
-                      Test
                     </button>
-                    <button class="btn-primary" @click="saveConfig">{{ editingConfigId ? 'Update' : 'Save' }}</button>
+                    <h2>{{ editingSystemModelId ? '编辑' : '添加' }}{{ systemModelType === 'summarize' ? '总结' : '向量' }}模型</h2>
                   </div>
-                </div>
-              </template>
+
+                  <div class="system-model-form">
+                    <div class="form-group">
+                      <label>供应商 *</label>
+                      <select v-model="newModel.provider_id">
+                        <option value="" disabled>选择供应商</option>
+                        <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }}</option>
+                      </select>
+                    </div>
+
+                    <div class="form-group">
+                      <label>模型名称 *</label>
+                      <input v-model="newModel.model" :placeholder="systemModelType === 'embedding' ? '例如: text-embedding-3-small' : '例如: gpt-3.5-turbo'" />
+                    </div>
+
+                    <div class="form-group" v-if="systemModelType !== 'embedding'">
+                      <label>最大 Tokens</label>
+                      <input v-model.number="newModel.max_tokens" type="number" />
+                    </div>
+
+                    <div class="form-group" v-if="systemModelType !== 'embedding'">
+                      <label>温度 (0-2)</label>
+                      <input v-model.number="newModel.temperature" type="number" step="0.1" min="0" max="2" />
+                    </div>
+
+                    <div class="form-group">
+                      <label class="checkbox-label">
+                        <input type="checkbox" v-model="newModel.is_default" />
+                        <span>设为默认{{ systemModelType === 'summarize' ? '总结' : '向量' }}模型</span>
+                      </label>
+                    </div>
+
+                    <div class="form-actions">
+                      <button class="btn-secondary" @click="resetSystemModelForm">取消</button>
+                      <button class="btn-primary" @click="saveSystemModel">{{ editingSystemModelId ? '更新' : '保存' }}</button>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <!-- Summarize Models Section -->
+                  <div class="system-model-section">
+                    <div class="system-model-header">
+                      <div class="system-model-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <path d="M14 2v6h6"></path>
+                          <line x1="16" y1="13" x2="8" y2="13"></line>
+                          <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                        <h3>总结模型</h3>
+                      </div>
+                      <p class="system-model-desc">用于生成对话摘要和标题</p>
+                      <button class="btn-add-model" @click="startAddSystemModel('summarize')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        添加
+                      </button>
+                    </div>
+                    <div class="system-model-list">
+                      <div v-for="model in summarizeModels" :key="model.id" class="model-item">
+                        <div class="model-info">
+                          <span class="model-name">
+                            {{ model.model }}
+                            <span v-if="model.is_default" class="default-badge">默认</span>
+                          </span>
+                          <span class="model-provider">{{ providers.find(p => p.id === model.provider_id)?.name || '未知供应商' }}</span>
+                        </div>
+                        <div class="model-actions">
+                          <button
+                            class="btn-icon btn-test"
+                            :class="{ testing: testingModelId === model.id }"
+                            @click="testModel(model.id)"
+                            :disabled="testingModelId === model.id"
+                            title="测试"
+                          >
+                            <svg v-if="testingModelId !== model.id" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                            <svg v-else class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <line x1="12" y1="2" x2="12" y2="6"></line>
+                              <line x1="12" y1="18" x2="12" y2="22"></line>
+                            </svg>
+                          </button>
+                          <button class="btn-icon" @click="editSystemModel(model)" title="编辑">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                          </button>
+                          <button class="btn-icon btn-danger" @click="removeModel(model.id)" title="删除">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                          </button>
+                          <button v-if="!model.is_default" class="btn-default" @click="setDefaultModel(model.id)" title="设为默认">
+                            设为默认
+                          </button>
+                        </div>
+                      </div>
+                      <p v-if="summarizeModels.length === 0" class="empty-models-text">暂未配置总结模型</p>
+                    </div>
+                  </div>
+
+                  <!-- Embedding Models Section -->
+                  <div class="system-model-section">
+                    <div class="system-model-header">
+                      <div class="system-model-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                          <path d="M2 17l10 5 10-5"></path>
+                          <path d="M2 12l10 5 10-5"></path>
+                        </svg>
+                        <h3>向量模型</h3>
+                      </div>
+                      <p class="system-model-desc">用于记忆检索和语义搜索</p>
+                      <button class="btn-add-model" @click="startAddSystemModel('embedding')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        添加
+                      </button>
+                    </div>
+                    <div class="system-model-list">
+                      <div v-for="model in embeddingModels" :key="model.id" class="model-item">
+                        <div class="model-info">
+                          <span class="model-name">
+                            {{ model.model }}
+                            <span v-if="model.is_default" class="default-badge">默认</span>
+                          </span>
+                          <span class="model-provider">{{ providers.find(p => p.id === model.provider_id)?.name || '未知供应商' }}</span>
+                        </div>
+                        <div class="model-actions">
+                          <button
+                            class="btn-icon btn-test"
+                            :class="{ testing: testingModelId === model.id }"
+                            @click="testModel(model.id)"
+                            :disabled="testingModelId === model.id"
+                            title="测试"
+                          >
+                            <svg v-if="testingModelId !== model.id" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                            <svg v-else class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <line x1="12" y1="2" x2="12" y2="6"></line>
+                              <line x1="12" y1="18" x2="12" y2="22"></line>
+                            </svg>
+                          </button>
+                          <button class="btn-icon" @click="editSystemModel(model)" title="编辑">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                          </button>
+                          <button class="btn-icon btn-danger" @click="removeModel(model.id)" title="删除">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                          </button>
+                          <button v-if="!model.is_default" class="btn-default" @click="setDefaultModel(model.id)" title="设为默认">
+                            设为默认
+                          </button>
+                        </div>
+                      </div>
+                      <p v-if="embeddingModels.length === 0" class="empty-models-text">暂未配置向量模型</p>
+                    </div>
+                  </div>
+                </template>
+              </div>
             </template>
 
             <!-- Knowledge Management Tab -->
@@ -933,6 +1558,30 @@ onUnmounted(() => {
                   </div>
                 </div>
               </template>
+            </template>
+
+            <!-- Port Settings Tab -->
+            <template v-else-if="currentSettingsTab === 'port'">
+              <div class="port-settings-container">
+                <div class="settings-section">
+                  <h3 class="settings-section-title">端口设置</h3>
+                  <div class="api-port-setting">
+                    <div class="form-group">
+                      <label>后端 API 端口</label>
+                      <div class="api-port-input">
+                        <input
+                          v-model="apiPort"
+                          type="text"
+                          placeholder="18080"
+                          @keyup.enter="saveApiPort"
+                        />
+                        <button class="btn-primary" @click="saveApiPort">保存</button>
+                      </div>
+                      <span class="form-hint">修改后需重启应用生效</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </template>
 
             <!-- Theme Settings Tab -->

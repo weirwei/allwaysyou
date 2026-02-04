@@ -63,6 +63,8 @@ func main() {
 
 	// Initialize repositories
 	configRepo := repository.NewConfigRepository(db)
+	providerRepo := repository.NewProviderRepository(db)
+	modelConfigRepo := repository.NewModelConfigRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
 	memoryRepo := repository.NewMemoryRepository(db)
 	knowledgeRepo := repository.NewKnowledgeRepository(db)
@@ -73,8 +75,10 @@ func main() {
 	adapterFactory.Register(model.ProviderClaude, adapter.NewClaudeAdapter)
 	adapterFactory.Register(model.ProviderAzure, adapter.NewAzureAdapter)
 
-	// Initialize config service first (needed for embedding provider)
+	// Initialize services
 	configService := service.NewConfigService(configRepo, encryptor)
+	providerService := service.NewProviderService(providerRepo, modelConfigRepo, encryptor)
+	modelConfigService := service.NewModelConfigService(modelConfigRepo, providerRepo)
 
 	// Initialize embedding provider based on config
 	var embedProvider embedding.Provider
@@ -100,11 +104,13 @@ func main() {
 
 	// Initialize services
 	memoryService := service.NewMemoryService(memoryRepo, knowledgeRepo, sessionRepo, vectorStore, embedProvider, cfg.Memory)
-	chatService := service.NewChatService(configService, sessionRepo, memoryManager, adapterFactory, cfg.LLM)
+	chatService := service.NewChatService(configService, modelConfigService, providerService, sessionRepo, memoryManager, adapterFactory, cfg.LLM)
 	summarizeService := service.NewSummarizeService(sessionRepo, memoryRepo, configService, adapterFactory)
 
 	// Initialize handlers
 	configHandler := handler.NewConfigHandler(configService, adapterFactory)
+	providerHandler := handler.NewProviderHandler(providerService, adapterFactory)
+	modelConfigHandler := handler.NewModelConfigHandler(modelConfigService, providerService, adapterFactory)
 	chatHandler := handler.NewChatHandler(chatService)
 	sessionHandler := handler.NewSessionHandler(sessionRepo, memoryRepo)
 	memoryHandler := handler.NewMemoryHandler(memoryService, summarizeService)
@@ -141,7 +147,7 @@ func main() {
 	// API routes
 	api := r.Group("/api/v1")
 	{
-		// Config routes
+		// Legacy Config routes (kept for backward compatibility)
 		configs := api.Group("/configs")
 		{
 			configs.POST("", configHandler.Create)
@@ -150,6 +156,29 @@ func main() {
 			configs.PUT("/:id", configHandler.Update)
 			configs.DELETE("/:id", configHandler.Delete)
 			configs.POST("/:id/test", configHandler.Test)
+		}
+
+		// Provider routes (new)
+		providers := api.Group("/providers")
+		{
+			providers.POST("", providerHandler.Create)
+			providers.GET("", providerHandler.GetAll)
+			providers.GET("/:id", providerHandler.GetByID)
+			providers.PUT("/:id", providerHandler.Update)
+			providers.DELETE("/:id", providerHandler.Delete)
+			providers.POST("/:id/test", providerHandler.Test)
+		}
+
+		// Model Config routes (new)
+		models := api.Group("/models")
+		{
+			models.POST("", modelConfigHandler.Create)
+			models.GET("", modelConfigHandler.GetAll)
+			models.GET("/:id", modelConfigHandler.GetByID)
+			models.PUT("/:id", modelConfigHandler.Update)
+			models.DELETE("/:id", modelConfigHandler.Delete)
+			models.POST("/:id/test", modelConfigHandler.Test)
+			models.POST("/:id/default", modelConfigHandler.SetDefault)
 		}
 
 		// Chat routes
