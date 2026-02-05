@@ -266,6 +266,7 @@ func (a *App) startServer() {
 	sessionRepo := repository.NewSessionRepository(db)
 	memoryRepo := repository.NewMemoryRepository(db)
 	knowledgeRepo := repository.NewKnowledgeRepository(db)
+	systemConfigRepo := repository.NewSystemConfigRepository(db)
 
 	// Initialize adapter factory
 	adapterFactory := adapter.NewAdapterFactory()
@@ -278,6 +279,12 @@ func (a *App) startServer() {
 	configService := service.NewConfigService(configRepo, encryptor)
 	providerService := service.NewProviderService(providerRepo, modelConfigRepo, encryptor)
 	modelConfigService := service.NewModelConfigService(modelConfigRepo, providerRepo)
+	systemConfigService := service.NewSystemConfigService(systemConfigRepo)
+
+	// Initialize default system configs
+	if err := systemConfigService.InitDefaults(); err != nil {
+		log.Printf("Failed to initialize default configs: %v", err)
+	}
 
 	// Initialize embedding provider
 	var embedProvider embedding.Provider
@@ -327,6 +334,7 @@ func (a *App) startServer() {
 	chatHandler := handler.NewChatHandler(chatService)
 	sessionHandler := handler.NewSessionHandler(sessionRepo, memoryRepo)
 	memoryHandler := handler.NewMemoryHandler(memoryService, summarizeService)
+	systemConfigHandler := handler.NewSystemConfigHandler(systemConfigService)
 
 	// Setup Gin
 	gin.SetMode(gin.ReleaseMode)
@@ -438,6 +446,14 @@ func (a *App) startServer() {
 			}
 			c.JSON(200, gin.H{"message": "Port updated, restart required", "port": req.Port})
 		})
+	}
+
+	// System Config API
+	systemConfigs := api.Group("/system-configs")
+	{
+		systemConfigs.GET("", systemConfigHandler.GetAll)
+		systemConfigs.GET("/category", systemConfigHandler.GetByCategory)
+		systemConfigs.PUT("/:key", systemConfigHandler.Update)
 	}
 
 	// Create HTTP server using config port

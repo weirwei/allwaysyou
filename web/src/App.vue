@@ -2,8 +2,8 @@
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { marked } from 'marked'
 import * as api from './api'
-import { getApiPort, setApiPort, getServerPort, saveServerPort } from './api'
-import type { Message, Session, Provider, ModelConfig, CreateProviderRequest, UpdateProviderRequest, CreateModelConfigRequest, UpdateModelConfigRequest, ConfigType, ProviderType, Knowledge, LLMConfig, CreateConfigRequest, UpdateConfigRequest } from './api'
+import { getApiPort, setApiPort, getServerPort, saveServerPort, getSystemConfigs, updateSystemConfig } from './api'
+import type { Message, Session, Provider, ModelConfig, CreateProviderRequest, UpdateProviderRequest, CreateModelConfigRequest, UpdateModelConfigRequest, ConfigType, ProviderType, Knowledge, LLMConfig, CreateConfigRequest, UpdateConfigRequest, SystemConfig } from './api'
 
 // State
 const sessions = ref<Session[]>([])
@@ -43,6 +43,10 @@ const currentTheme = ref('default')
 
 // API settings
 const apiPort = ref(getApiPort())
+
+// Memory settings
+const memoryConfigs = ref<SystemConfig[]>([])
+const editingConfigs = ref<Record<string, string>>({})
 const themes = [
   { id: 'default', name: 'Default', preview: ['#1A1A2E', '#6366F1', '#06B6D4'] },
   { id: 'monokai', name: 'Monokai', preview: ['#272822', '#f92672', '#a6e22e'] },
@@ -53,12 +57,13 @@ const themes = [
 ]
 
 // Settings tab state
-type SettingsTab = 'model' | 'system' | 'knowledge' | 'port' | 'theme'
+type SettingsTab = 'model' | 'system' | 'knowledge' | 'memory' | 'port' | 'theme'
 const currentSettingsTab = ref<SettingsTab>('model')
 const settingsTabs: { id: SettingsTab; name: string; icon: string }[] = [
   { id: 'model', name: '模型配置', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
   { id: 'system', name: '系统模型', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
   { id: 'knowledge', name: '知识管理', icon: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z' },
+  { id: 'memory', name: '记忆设置', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { id: 'port', name: '端口设置', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { id: 'theme', name: '主题', icon: 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z' },
 ]
@@ -187,6 +192,49 @@ async function saveApiPort() {
     await saveServerPort(parseInt(port))
     setApiPort(port) // Also save to localStorage for frontend use
     showToast('API 端口已保存，重启应用后生效', 'success')
+  } catch (e: any) {
+    showToast(e.message || '保存失败', 'error')
+  }
+}
+
+// Memory config functions
+async function loadMemoryConfigs() {
+  try {
+    memoryConfigs.value = await getSystemConfigs('memory')
+    // Initialize editing values
+    editingConfigs.value = {}
+    memoryConfigs.value.forEach(config => {
+      editingConfigs.value[config.key] = config.value
+    })
+  } catch (e) {
+    console.error('Failed to load memory configs:', e)
+  }
+}
+
+async function saveMemoryConfig(key: string) {
+  const value = editingConfigs.value[key]
+  if (!value) return
+
+  try {
+    await updateSystemConfig(key, value)
+    // Update local value
+    const config = memoryConfigs.value.find(c => c.key === key)
+    if (config) {
+      config.value = value
+    }
+    showToast('配置已保存', 'success')
+  } catch (e: any) {
+    showToast(e.message || '保存失败', 'error')
+  }
+}
+
+async function saveAllMemoryConfigs() {
+  try {
+    for (const config of memoryConfigs.value) {
+      await updateSystemConfig(config.key, editingConfigs.value[config.key])
+    }
+    await loadMemoryConfigs() // Reload to confirm
+    showToast('所有配置已保存', 'success')
   } catch (e: any) {
     showToast(e.message || '保存失败', 'error')
   }
@@ -825,6 +873,8 @@ function handleKeydown(e: KeyboardEvent) {
 watch(currentSettingsTab, (newTab) => {
   if (newTab === 'knowledge') {
     loadKnowledge()
+  } else if (newTab === 'memory') {
+    loadMemoryConfigs()
   }
 })
 
@@ -1558,6 +1608,41 @@ onUnmounted(() => {
                   </div>
                 </div>
               </template>
+            </template>
+
+            <!-- Memory Settings Tab -->
+            <template v-else-if="currentSettingsTab === 'memory'">
+              <div class="memory-settings-container">
+                <div class="settings-section">
+                  <h3 class="settings-section-title">记忆系统配置</h3>
+                  <div class="memory-configs-list">
+                    <div v-for="config in memoryConfigs" :key="config.key" class="config-item">
+                      <div class="config-info">
+                        <label class="config-label">{{ config.label }}</label>
+                        <span class="config-hint">{{ config.hint }}</span>
+                      </div>
+                      <div class="config-input-group">
+                        <input
+                          v-model="editingConfigs[config.key]"
+                          :type="config.type === 'number' ? 'number' : 'text'"
+                          :step="config.type === 'number' ? '0.01' : undefined"
+                          class="config-input"
+                        />
+                        <button class="btn-icon btn-save" @click="saveMemoryConfig(config.key)" title="保存">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"></path>
+                            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                            <polyline points="7 3 7 8 15 8"></polyline>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-actions" style="margin-top: var(--space-lg);">
+                    <button class="btn-primary" @click="saveAllMemoryConfigs">保存所有配置</button>
+                  </div>
+                </div>
+              </div>
             </template>
 
             <!-- Port Settings Tab -->

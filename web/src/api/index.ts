@@ -39,6 +39,38 @@ export async function saveServerPort(port: number): Promise<void> {
   }
 }
 
+// System Config API
+export interface SystemConfig {
+  key: string
+  value: string
+  type: string
+  category: string
+  label: string
+  hint: string
+}
+
+export async function getSystemConfigs(category?: string): Promise<SystemConfig[]> {
+  const url = category
+    ? `${getApiBaseUrl()}/system-configs/category?category=${category}`
+    : `${getApiBaseUrl()}/system-configs`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('Failed to fetch system configs')
+  return res.json()
+}
+
+export async function updateSystemConfig(key: string, value: string): Promise<SystemConfig> {
+  const res = await fetch(`${getApiBaseUrl()}/system-configs/${key}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value })
+  })
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Failed to update config')
+  }
+  return res.json()
+}
+
 // Use getter to allow dynamic port changes
 const getApiBaseUrl = () => getApiBase()
 

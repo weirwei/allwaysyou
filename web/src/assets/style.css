@@ -1914,10 +1914,77 @@ body {
   border-top: 1px solid var(--border-subtle);
 }
 
-.port-settings-container {
-  max-width: 600px;
+.port-settings-container,
+.memory-settings-container {
+  max-width: 700px;
   margin: 0 auto;
   padding: var(--space-lg);
+}
+
+.memory-configs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.config-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-label {
+  display: block;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-xs);
+}
+
+.config-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.config-input-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 150px;
+}
+
+.config-input {
+  flex: 1;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.config-input:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+  box-shadow: 0 0 0 3px var(--ai-accent-glow);
+}
+
+.btn-save {
+  color: var(--ai-accent);
+}
+
+.btn-save:hover {
+  background: var(--ai-accent-glow);
 }
 
 .settings-section {
