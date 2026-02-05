@@ -19,16 +19,6 @@ const (
 	TruncateLengthMedium = 50
 )
 
-// Vector store metadata keys
-const (
-	MetadataKeyType     = "type"
-	MetadataKeyCategory = "category"
-	MetadataKeySource   = "source"
-	MetadataKeyIsActive = "is_active"
-	MetadataValueTrue   = "true"
-	MetadataValueFalse  = "false"
-)
-
 // Vector store document roles
 const (
 	RoleKnowledge = "knowledge"

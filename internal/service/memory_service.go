@@ -77,10 +77,12 @@ func (s *MemoryService) SearchMemories(ctx context.Context, query string, sessio
 	}
 
 	// Search in vector store (knowledge only)
+	// Use context_relevance_threshold to filter out low-relevance results
 	filter := &vector.SearchFilter{
 		ActiveOnly: true,
+		MinScore:   s.config.ContextRelevanceThreshold,
 	}
-	results := s.vectorStore.SearchWithFilter(queryEmb, limit, filter)
+	results := s.vectorStore.Search(queryEmb, limit, filter)
 
 	// Convert to knowledge search results
 	searchResults := make([]model.KnowledgeSearchResult, 0, len(results))

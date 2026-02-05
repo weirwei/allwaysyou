@@ -125,12 +125,6 @@ func (m *DefaultManager) saveKnowledgeEmbedding(knowledge *model.Knowledge, cate
 		ID:        knowledge.ID,
 		Content:   knowledge.Content,
 		Embedding: emb,
-		Metadata: map[string]string{
-			constants.MetadataKeyType:     constants.RoleKnowledge,
-			constants.MetadataKeyCategory: string(category),
-			constants.MetadataKeySource:   string(source),
-			constants.MetadataKeyIsActive: constants.MetadataValueTrue,
-		},
 		MetaData: &vector.DocumentMetadata{
 			Role:       constants.RoleKnowledge,
 			Category:   string(category),
@@ -184,7 +178,7 @@ func (m *DefaultManager) SearchKnowledge(ctx context.Context, opts SearchOptions
 	}
 
 	// Search in vector store
-	results := m.vectorStore.SearchWithFilter(queryEmb, opts.Limit, filter)
+	results := m.vectorStore.Search(queryEmb, opts.Limit, filter)
 	log.Printf("[Knowledge:Search] Vector search returned %d results", len(results))
 
 	// Convert to knowledge search results

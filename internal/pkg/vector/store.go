@@ -17,7 +17,7 @@ type DocumentMetadata struct {
 	Category   string  `json:"category"`
 	Source     string  `json:"source"`
 	Importance float32 `json:"importance"`
-	IsActive   bool    `json:"is_active"` // 是否有效(未被取代)
+	IsActive   bool    `json:"is_active"`
 	CreatedAt  int64   `json:"created_at"`
 }
 
@@ -26,8 +26,7 @@ type Document struct {
 	ID        string            `json:"id"`
 	Content   string            `json:"content"`
 	Embedding []float32         `json:"embedding"`
-	Metadata  map[string]string `json:"metadata"`            // 保持向后兼容
-	MetaData  *DocumentMetadata `json:"meta_data,omitempty"` // 新的结构化元数据
+	MetaData  *DocumentMetadata `json:"meta_data,omitempty"`
 }
 
 // SearchResult represents a search result with similarity score
@@ -38,10 +37,10 @@ type SearchResult struct {
 
 // SearchFilter represents advanced search filter options
 type SearchFilter struct {
-	SessionID  string   // 按会话过滤
-	Categories []string // 按类别过滤
-	ActiveOnly bool     // 仅返回有效记忆
-	MinScore   float32  // 最低相似度
+	SessionID  string
+	Categories []string
+	ActiveOnly bool
+	MinScore   float32
 }
 
 // VectorStore is an in-memory vector store with persistence
@@ -115,22 +114,8 @@ func (s *VectorStore) Delete(id string) error {
 	return s.save()
 }
 
-// DeleteByMetadata removes documents matching metadata criteria
-func (s *VectorStore) DeleteByMetadata(key, value string) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	for id, doc := range s.documents {
-		if doc.Metadata[key] == value {
-			delete(s.documents, id)
-		}
-	}
-
-	return s.save()
-}
-
 // Search performs a similarity search using cosine similarity
-func (s *VectorStore) Search(queryEmbedding []float32, limit int, filter map[string]string) []SearchResult {
+func (s *VectorStore) Search(queryEmbedding []float32, limit int, filter *SearchFilter) []SearchResult {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
@@ -139,83 +124,21 @@ func (s *VectorStore) Search(queryEmbedding []float32, limit int, filter map[str
 	for _, doc := range s.documents {
 		// Apply filter
 		if filter != nil {
-			match := true
-			for k, v := range filter {
-				if doc.Metadata[k] != v {
-					match = false
-					break
-				}
-			}
-			if !match {
+			if filter.ActiveOnly && doc.MetaData != nil && !doc.MetaData.IsActive {
 				continue
 			}
-		}
 
-		score := cosineSimilarity(queryEmbedding, doc.Embedding)
-		results = append(results, SearchResult{
-			Document: doc,
-			Score:    score,
-		})
-	}
-
-	// Sort by score descending
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
-
-	// Limit results
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results
-}
-
-// SearchWithFilter performs a similarity search with advanced filtering
-func (s *VectorStore) SearchWithFilter(queryEmbedding []float32, limit int, filter *SearchFilter) []SearchResult {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-
-	var results []SearchResult
-
-	for _, doc := range s.documents {
-		// Apply structured filter
-		if filter != nil {
-			// Check active only (using new MetaData or fallback to old metadata)
-			if filter.ActiveOnly {
-				if doc.MetaData != nil && !doc.MetaData.IsActive {
-					continue
-				}
-				// Fallback: check old metadata for is_active
-				if doc.MetaData == nil && doc.Metadata["is_active"] == "false" {
-					continue
-				}
+			if filter.SessionID != "" && (doc.MetaData == nil || doc.MetaData.SessionID != filter.SessionID) {
+				continue
 			}
 
-			// Check session ID
-			if filter.SessionID != "" {
-				sessionID := ""
-				if doc.MetaData != nil {
-					sessionID = doc.MetaData.SessionID
-				} else {
-					sessionID = doc.Metadata["session_id"]
-				}
-				if sessionID != filter.SessionID {
-					continue
-				}
-			}
-
-			// Check categories
 			if len(filter.Categories) > 0 {
-				category := ""
-				if doc.MetaData != nil {
-					category = doc.MetaData.Category
-				} else {
-					category = doc.Metadata["category"]
+				if doc.MetaData == nil {
+					continue
 				}
 				found := false
 				for _, c := range filter.Categories {
-					if c == category {
+					if c == doc.MetaData.Category {
 						found = true
 						break
 					}
@@ -228,7 +151,6 @@ func (s *VectorStore) SearchWithFilter(queryEmbedding []float32, limit int, filt
 
 		score := cosineSimilarity(queryEmbedding, doc.Embedding)
 
-		// Check minimum score
 		if filter != nil && filter.MinScore > 0 && score < filter.MinScore {
 			continue
 		}
@@ -263,14 +185,6 @@ func (s *VectorStore) UpdateMetadata(id string, metadata *DocumentMetadata) erro
 	}
 
 	doc.MetaData = metadata
-	// Also update old metadata for backward compatibility
-	if doc.Metadata == nil {
-		doc.Metadata = make(map[string]string)
-	}
-	doc.Metadata["is_active"] = fmt.Sprintf("%v", metadata.IsActive)
-	doc.Metadata["category"] = metadata.Category
-	doc.Metadata["source"] = metadata.Source
-
 	s.documents[id] = doc
 	return s.save()
 }
