@@ -17,7 +17,6 @@ import (
 
 // ChatService handles chat interactions
 type ChatService struct {
-	configService      *ConfigService
 	modelConfigService *ModelConfigService
 	providerService    *ProviderService
 	sessionRepo        *repository.SessionRepository
@@ -28,7 +27,6 @@ type ChatService struct {
 
 // NewChatService creates a new chat service
 func NewChatService(
-	configService *ConfigService,
 	modelConfigService *ModelConfigService,
 	providerService *ProviderService,
 	sessionRepo *repository.SessionRepository,
@@ -37,7 +35,6 @@ func NewChatService(
 	llmCfg config.LLMDefaults,
 ) *ChatService {
 	return &ChatService{
-		configService:      configService,
 		modelConfigService: modelConfigService,
 		providerService:    providerService,
 		sessionRepo:        sessionRepo,
@@ -48,9 +45,7 @@ func NewChatService(
 }
 
 // getModelConfigAndAPIKey gets the model config and decrypts the API key
-// It first tries to use the new ModelConfig/Provider structure, falls back to LLMConfig
 func (s *ChatService) getModelConfigAndAPIKey(configID string, configType model.ConfigType) (providerType model.ProviderType, apiKey, baseURL, modelName string, maxTokens int, temperature float64, configIDOut string, err error) {
-	// First try the new ModelConfig structure
 	var modelConfig *model.ModelConfig
 	if configID != "" {
 		modelConfig, err = s.modelConfigService.GetByID(configID)
@@ -58,35 +53,18 @@ func (s *ChatService) getModelConfigAndAPIKey(configID string, configType model.
 		modelConfig, err = s.modelConfigService.GetDefaultByType(configType)
 	}
 
-	if err == nil && modelConfig != nil && modelConfig.Provider != nil {
-		// Use new structure
-		apiKey, err = s.providerService.GetDecryptedAPIKey(modelConfig.ProviderID)
-		if err != nil {
-			return "", "", "", "", 0, 0, "", fmt.Errorf("failed to decrypt API key: %w", err)
-		}
-		return modelConfig.Provider.Type, apiKey, modelConfig.Provider.BaseURL, modelConfig.Model, modelConfig.MaxTokens, modelConfig.Temperature, modelConfig.ID, nil
-	}
-
-	// Fall back to legacy LLMConfig
-	var llmConfig *model.LLMConfig
-	if configID != "" {
-		llmConfig, err = s.configService.GetByID(configID)
-	} else {
-		llmConfig, err = s.configService.GetDefaultByType(configType)
-	}
 	if err != nil {
 		return "", "", "", "", 0, 0, "", fmt.Errorf("failed to get config: %w", err)
 	}
-	if llmConfig == nil {
+	if modelConfig == nil || modelConfig.Provider == nil {
 		return "", "", "", "", 0, 0, "", fmt.Errorf("no LLM config available")
 	}
 
-	apiKey, err = s.configService.DecryptAPIKey(llmConfig.APIKey)
+	apiKey, err = s.providerService.GetDecryptedAPIKey(modelConfig.ProviderID)
 	if err != nil {
 		return "", "", "", "", 0, 0, "", fmt.Errorf("failed to decrypt API key: %w", err)
 	}
-
-	return llmConfig.Provider, apiKey, llmConfig.BaseURL, llmConfig.Model, llmConfig.MaxTokens, llmConfig.Temperature, llmConfig.ID, nil
+	return modelConfig.Provider.Type, apiKey, modelConfig.Provider.BaseURL, modelConfig.Model, modelConfig.MaxTokens, modelConfig.Temperature, modelConfig.ID, nil
 }
 
 // Chat processes a chat request and returns a response

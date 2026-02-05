@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { marked } from 'marked'
 import * as api from './api'
 import { getApiPort, setApiPort, getServerPort, saveServerPort, getSystemConfigs, updateSystemConfig } from './api'
-import type { Message, Session, Provider, ModelConfig, CreateProviderRequest, UpdateProviderRequest, CreateModelConfigRequest, UpdateModelConfigRequest, ConfigType, ProviderType, Knowledge, LLMConfig, CreateConfigRequest, UpdateConfigRequest, SystemConfig } from './api'
+import type { Message, Session, Provider, ModelConfig, CreateProviderRequest, UpdateProviderRequest, CreateModelConfigRequest, UpdateModelConfigRequest, ConfigType, ProviderType, Knowledge, SystemConfig } from './api'
 
 // State
 const sessions = ref<Session[]>([])
@@ -28,9 +28,6 @@ const editingModelId = ref<string | null>(null)
 const testingProviderId = ref<string | null>(null)
 const testingModelId = ref<string | null>(null)
 const showApiKey = ref(false)
-
-// Legacy config state (for backward compatibility)
-const configs = ref<LLMConfig[]>([])
 
 // Knowledge state
 const knowledgeList = ref<Knowledge[]>([])
@@ -381,14 +378,6 @@ async function loadModels() {
   }
 }
 
-async function loadConfigs() {
-  try {
-    configs.value = await api.getConfigs()
-  } catch (e) {
-    console.error('Failed to load configs:', e)
-  }
-}
-
 async function selectSession(session: Session) {
   currentSessionId.value = session.id
   try {
@@ -447,11 +436,10 @@ function newChat() {
 async function sendMessage() {
   if (!inputText.value.trim() || isLoading.value) return
 
-  // Check if we have any config (new or legacy)
-  const hasNewConfig = models.value.some(m => m.config_type === 'chat')
-  const hasLegacyConfig = configs.value.some(c => c.config_type === 'chat')
+  // Check if we have any chat model configured
+  const hasChatModel = models.value.some(m => m.config_type === 'chat')
 
-  if (!hasNewConfig && !hasLegacyConfig) {
+  if (!hasChatModel) {
     showToast('Please add an LLM configuration first', 'info')
     currentView.value = 'settings'
     return
@@ -883,7 +871,7 @@ onMounted(async () => {
   loadTheme()
   loadApiPort()
   window.addEventListener('keydown', handleGlobalKeydown)
-  await Promise.all([loadSessions(), loadProviders(), loadModels(), loadConfigs(), loadKnowledge()])
+  await Promise.all([loadSessions(), loadProviders(), loadModels(), loadKnowledge()])
 })
 
 onUnmounted(() => {

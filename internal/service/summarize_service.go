@@ -12,24 +12,27 @@ import (
 
 // SummarizeService handles conversation summarization
 type SummarizeService struct {
-	sessionRepo    *repository.SessionRepository
-	memoryRepo     *repository.MemoryRepository
-	configService  *ConfigService
-	adapterFactory *adapter.AdapterFactory
+	sessionRepo        *repository.SessionRepository
+	memoryRepo         *repository.MemoryRepository
+	modelConfigService *ModelConfigService
+	providerService    *ProviderService
+	adapterFactory     *adapter.AdapterFactory
 }
 
 // NewSummarizeService creates a new summarize service
 func NewSummarizeService(
 	sessionRepo *repository.SessionRepository,
 	memoryRepo *repository.MemoryRepository,
-	configService *ConfigService,
+	modelConfigService *ModelConfigService,
+	providerService *ProviderService,
 	adapterFactory *adapter.AdapterFactory,
 ) *SummarizeService {
 	return &SummarizeService{
-		sessionRepo:    sessionRepo,
-		memoryRepo:     memoryRepo,
-		configService:  configService,
-		adapterFactory: adapterFactory,
+		sessionRepo:        sessionRepo,
+		memoryRepo:         memoryRepo,
+		modelConfigService: modelConfigService,
+		providerService:    providerService,
+		adapterFactory:     adapterFactory,
 	}
 }
 
@@ -54,37 +57,37 @@ func (s *SummarizeService) SummarizeSession(ctx context.Context, sessionID strin
 		return "", fmt.Errorf("no messages to summarize")
 	}
 
-	// Get LLM config (use summarize type config)
-	llmConfig, err := s.configService.GetDefaultByType(model.ConfigTypeSummarize)
+	// Get model config (use summarize type config)
+	modelConfig, err := s.modelConfigService.GetDefaultByType(model.ConfigTypeSummarize)
 	if err != nil {
 		return "", fmt.Errorf("failed to get config: %w", err)
 	}
-	if llmConfig == nil {
+	if modelConfig == nil || modelConfig.Provider == nil {
 		// Fallback to chat config if no summarize config exists
-		llmConfig, err = s.configService.GetDefaultByType(model.ConfigTypeChat)
+		modelConfig, err = s.modelConfigService.GetDefaultByType(model.ConfigTypeChat)
 		if err != nil {
 			return "", fmt.Errorf("failed to get config: %w", err)
 		}
 	}
-	if llmConfig == nil {
+	if modelConfig == nil || modelConfig.Provider == nil {
 		return "", fmt.Errorf("no LLM config available")
 	}
 
 	// Create adapter
-	apiKey, err := s.configService.DecryptAPIKey(llmConfig.APIKey)
+	apiKey, err := s.providerService.GetDecryptedAPIKey(modelConfig.ProviderID)
 	if err != nil {
 		return "", fmt.Errorf("failed to decrypt API key: %w", err)
 	}
 
 	adapterCfg := adapter.AdapterConfig{
 		APIKey:      apiKey,
-		BaseURL:     llmConfig.BaseURL,
-		Model:       llmConfig.Model,
+		BaseURL:     modelConfig.Provider.BaseURL,
+		Model:       modelConfig.Model,
 		MaxTokens:   1024, // Limit summary length
 		Temperature: 0.3,  // Lower temperature for more focused summary
 	}
 
-	llmAdapter, err := s.adapterFactory.Create(llmConfig.Provider, adapterCfg)
+	llmAdapter, err := s.adapterFactory.Create(modelConfig.Provider.Type, adapterCfg)
 	if err != nil {
 		return "", fmt.Errorf("failed to create adapter: %w", err)
 	}
@@ -132,130 +135,3 @@ Keep the summary brief but comprehensive. Write in a neutral, factual tone.`,
 	return summary, nil
 }
 
-// AutoSummarizeIfNeeded checks if a session needs summarization and does it
-func (s *SummarizeService) AutoSummarizeIfNeeded(ctx context.Context, sessionID string, threshold int) error {
-	if threshold <= 0 {
-		threshold = 20 // Default: summarize after 20 messages
-	}
-
-	// Count messages
-	count, err := s.memoryRepo.CountBySessionID(sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to count memories: %w", err)
-	}
-
-	// Check if we need to summarize
-	if count < int64(threshold) {
-		return nil
-	}
-
-	// Check if already summarized recently
-	session, err := s.sessionRepo.GetByID(sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
-	}
-	if session == nil {
-		return nil
-	}
-
-	// If already has a summary, skip (could add timestamp check for re-summarization)
-	if session.Summary != "" {
-		return nil
-	}
-
-	// Generate summary
-	_, err = s.SummarizeSession(ctx, sessionID)
-	return err
-}
-
-// GenerateTitle generates a title for a session based on its first messages
-func (s *SummarizeService) GenerateTitle(ctx context.Context, sessionID string) (string, error) {
-	// Get first few messages
-	memories, err := s.memoryRepo.GetBySessionID(sessionID, 5)
-	if err != nil {
-		return "", fmt.Errorf("failed to get memories: %w", err)
-	}
-
-	if len(memories) == 0 {
-		return "New Chat", nil
-	}
-
-	// Get LLM config
-	session, err := s.sessionRepo.GetByID(sessionID)
-	if err != nil || session == nil {
-		return "New Chat", nil
-	}
-
-	// Get summarize config for title generation (fallback to chat config)
-	llmConfig, _ := s.configService.GetDefaultByType(model.ConfigTypeSummarize)
-	if llmConfig == nil {
-		llmConfig, _ = s.configService.GetDefaultByType(model.ConfigTypeChat)
-	}
-
-	if llmConfig == nil {
-		// Fallback: use first user message as title
-		for _, mem := range memories {
-			if mem.Role == model.RoleUser {
-				title := mem.Content
-				if len(title) > 50 {
-					title = title[:47] + "..."
-				}
-				return title, nil
-			}
-		}
-		return "New Chat", nil
-	}
-
-	// Create adapter
-	apiKey, err := s.configService.DecryptAPIKey(llmConfig.APIKey)
-	if err != nil {
-		return "New Chat", nil
-	}
-
-	adapterCfg := adapter.AdapterConfig{
-		APIKey:      apiKey,
-		BaseURL:     llmConfig.BaseURL,
-		Model:       llmConfig.Model,
-		MaxTokens:   50,
-		Temperature: 0.3,
-	}
-
-	llmAdapter, err := s.adapterFactory.Create(llmConfig.Provider, adapterCfg)
-	if err != nil {
-		return "New Chat", nil
-	}
-
-	// Build conversation text
-	var conversationParts []string
-	for _, mem := range memories {
-		conversationParts = append(conversationParts, fmt.Sprintf("%s: %s", mem.Role, mem.Content))
-	}
-
-	messages := []model.Message{
-		{
-			Role:    model.RoleSystem,
-			Content: "Generate a short, descriptive title (max 50 characters) for this conversation. Return only the title, nothing else.",
-		},
-		{
-			Role:    model.RoleUser,
-			Content: strings.Join(conversationParts, "\n"),
-		},
-	}
-
-	resp, err := llmAdapter.Chat(ctx, messages)
-	if err != nil {
-		return "New Chat", nil
-	}
-
-	title := strings.TrimSpace(resp.Message.Content)
-	title = strings.Trim(title, "\"'")
-	if len(title) > 50 {
-		title = title[:47] + "..."
-	}
-
-	// Update session title
-	session.Title = title
-	_ = s.sessionRepo.Update(session)
-
-	return title, nil
-}

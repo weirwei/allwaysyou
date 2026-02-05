@@ -147,12 +147,10 @@ func (m *ModelConfig) ToResponse() ModelConfigResponse {
 	return resp
 }
 
-// ---- Backward compatibility aliases ----
-// These are kept for migration purposes and will be removed later
-
-// LLMProvider is an alias for ProviderType (deprecated)
+// LLMProvider is an alias for ProviderType (for adapter compatibility)
 type LLMProvider = ProviderType
 
+// Provider type aliases for convenience
 const (
 	ProviderOpenAI  = ProviderTypeOpenAI
 	ProviderClaude  = ProviderTypeClaude
@@ -160,78 +158,3 @@ const (
 	ProviderOllama  = ProviderTypeOllama
 	ProviderCustom  = ProviderTypeCustom
 )
-
-// LLMConfig is kept for backward compatibility during migration
-// This will be removed after migration is complete
-type LLMConfig struct {
-	ID          string       `json:"id" gorm:"primaryKey"`
-	Name        string       `json:"name" gorm:"not null"`
-	Provider    ProviderType `json:"provider" gorm:"not null"`
-	APIKey      string       `json:"api_key,omitempty" gorm:"not null"` // Encrypted
-	BaseURL     string       `json:"base_url,omitempty"`
-	Model       string       `json:"model" gorm:"not null"`
-	MaxTokens   int          `json:"max_tokens" gorm:"default:4096"`
-	Temperature float64      `json:"temperature" gorm:"default:0.7"`
-	IsDefault   bool         `json:"is_default" gorm:"default:false"`
-	ConfigType  ConfigType   `json:"config_type" gorm:"default:chat"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-}
-
-// CreateLLMConfigRequest is kept for backward compatibility
-type CreateLLMConfigRequest struct {
-	Name        string       `json:"name" binding:"required"`
-	Provider    ProviderType `json:"provider" binding:"required"`
-	APIKey      string       `json:"api_key" binding:"required"`
-	BaseURL     string       `json:"base_url"`
-	Model       string       `json:"model" binding:"required"`
-	MaxTokens   int          `json:"max_tokens"`
-	Temperature float64      `json:"temperature"`
-	IsDefault   bool         `json:"is_default"`
-	ConfigType  ConfigType   `json:"config_type"`
-}
-
-// UpdateLLMConfigRequest is kept for backward compatibility
-type UpdateLLMConfigRequest struct {
-	Name        string       `json:"name"`
-	Provider    ProviderType `json:"provider"`
-	APIKey      string       `json:"api_key"`
-	BaseURL     string       `json:"base_url"`
-	Model       string       `json:"model"`
-	MaxTokens   *int         `json:"max_tokens"`
-	Temperature *float64     `json:"temperature"`
-	IsDefault   *bool        `json:"is_default"`
-	ConfigType  ConfigType   `json:"config_type"`
-}
-
-// LLMConfigResponse is kept for backward compatibility
-type LLMConfigResponse struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Provider    ProviderType `json:"provider"`
-	BaseURL     string       `json:"base_url,omitempty"`
-	Model       string       `json:"model"`
-	MaxTokens   int          `json:"max_tokens"`
-	Temperature float64      `json:"temperature"`
-	IsDefault   bool         `json:"is_default"`
-	ConfigType  ConfigType   `json:"config_type"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-}
-
-// ToResponse converts LLMConfig to LLMConfigResponse (excludes API key)
-func (c *LLMConfig) ToResponse() LLMConfigResponse {
-	return LLMConfigResponse{
-		ID:          c.ID,
-		Name:        c.Name,
-		Provider:    c.Provider,
-		BaseURL:     c.BaseURL,
-		Model:       c.Model,
-		MaxTokens:   c.MaxTokens,
-		Temperature: c.Temperature,
-		IsDefault:   c.IsDefault,
-		ConfigType:  c.ConfigType,
-		CreatedAt:   c.CreatedAt,
-		UpdatedAt:   c.UpdatedAt,
-	}
-}

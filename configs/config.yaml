@@ -8,7 +8,6 @@ database:
 
 vector:
   path: "./data/chroma"
-  collection: "memories"
 
 encryption:
   # Key should be set via environment variable: LLM_AGENT_ENCRYPTION_KEY
@@ -44,6 +43,3 @@ llm:
   stream_buffer_size: 100             # Stream channel buffer size
   title_max_length: 50                # Max length for session titles
 
-log:
-  level: "info"  # debug, info, warn, error
-  format: "json"  # json, text

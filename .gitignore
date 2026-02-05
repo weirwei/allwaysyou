@@ -1,25 +1,3 @@
-.runtime/
-.claude/
-.beads/
-.logs/
-
-# Binaries
-bin/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary
-*.test
-
-# Output of go coverage
-*.out
-
-# Dependency directories
-vendor/
-
 # IDE
 .idea/
 .vscode/
@@ -30,6 +8,22 @@ vendor/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Go binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go coverage
+*.out
+coverage.html
+
+# Dependencies
+vendor/
 
 # Data directory (local database and vector store)
 data/
@@ -49,16 +43,22 @@ temp/
 # Air hot reload
 .air.toml
 
-# Web build
+# Web frontend
 web/dist/
 web/node_modules/
 
-# Desktop build (Wails)
+# Desktop app (Wails)
 desktop/build/bin/
 desktop/frontend/dist/
 desktop/frontend/node_modules/
 desktop/frontend/wailsjs/
 desktop/frontend/package-lock.json
 desktop/frontend/*.md5
+desktop/desktop
 
+# Claude/AI tools
+.runtime/
+.claude/
+.beads/
+.logs/
 .spec-workflow/

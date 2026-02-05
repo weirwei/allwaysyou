@@ -39,18 +39,6 @@ deps:
 	$(GOMOD) download
 	$(GOMOD) tidy
 
-# Generate encryption key
-genkey:
-	@$(GORUN) -e 'package main; import ("crypto/rand"; "encoding/base64"; "fmt"); func main() { k := make([]byte, 32); rand.Read(k); fmt.Println(base64.StdEncoding.EncodeToString(k)) }'
-
-# Docker build
-docker-build:
-	docker build -t $(BINARY_NAME) .
-
-# Docker run
-docker-run:
-	docker run -p 8080:8080 $(BINARY_NAME)
-
 # Desktop app (Wails)
 desktop-deps:
 	cd desktop && go mod tidy

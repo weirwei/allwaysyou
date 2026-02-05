@@ -33,7 +33,6 @@ func NewDB(dbPath string) (*DB, error) {
 
 	// Auto migrate
 	if err := db.AutoMigrate(
-		&model.LLMConfig{},
 		&model.Provider{},
 		&model.ModelConfig{},
 		&model.Session{},

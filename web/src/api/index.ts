@@ -95,46 +95,7 @@ export interface Session {
 export type ConfigType = 'chat' | 'summarize' | 'embedding'
 export type ProviderType = 'openai' | 'claude' | 'azure' | 'ollama' | 'custom'
 
-// Legacy LLMConfig (kept for backward compatibility)
-export interface LLMConfig {
-  id: string
-  name: string
-  provider: ProviderType
-  base_url?: string
-  model: string
-  max_tokens: number
-  temperature: number
-  is_default: boolean
-  config_type: ConfigType
-  created_at: string
-  updated_at: string
-}
-
-export interface CreateConfigRequest {
-  name: string
-  provider: string
-  api_key: string
-  base_url?: string
-  model: string
-  max_tokens?: number
-  temperature?: number
-  is_default?: boolean
-  config_type?: ConfigType
-}
-
-export interface UpdateConfigRequest {
-  name?: string
-  provider?: string
-  api_key?: string
-  base_url?: string
-  model?: string
-  max_tokens?: number
-  temperature?: number
-  is_default?: boolean
-  config_type?: ConfigType
-}
-
-// New Provider types
+// Provider types
 export interface Provider {
   id: string
   name: string
@@ -224,73 +185,10 @@ export interface TestResult {
   error?: string
 }
 
-// Legacy Config API (kept for backward compatibility)
-export async function getConfigs(): Promise<LLMConfig[]> {
-  const res = await fetch(`${getApiBaseUrl()}/configs`)
-  if (!res.ok) throw new Error('Failed to fetch configs')
-  return res.json()
-}
-
-export async function createConfig(config: CreateConfigRequest): Promise<LLMConfig> {
-  const res = await fetch(`${getApiBaseUrl()}/configs`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config)
-  })
-  if (!res.ok) {
-    const error = await res.json()
-    throw new Error(error.error || 'Failed to create config')
-  }
-  return res.json()
-}
-
-export async function deleteConfig(id: string): Promise<void> {
-  const res = await fetch(`${getApiBaseUrl()}/configs/${id}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error('Failed to delete config')
-}
-
-export async function updateConfig(id: string, config: UpdateConfigRequest): Promise<LLMConfig> {
-  const res = await fetch(`${getApiBaseUrl()}/configs/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config)
-  })
-  if (!res.ok) {
-    const error = await res.json()
-    throw new Error(error.error || 'Failed to update config')
-  }
-  return res.json()
-}
-
-export async function setDefaultConfig(id: string): Promise<void> {
-  await updateConfig(id, { is_default: true })
-}
-
-export interface TestConfigResult {
-  success: boolean
-  message?: string
-  error?: string
-}
-
-export async function testConfig(id: string): Promise<TestConfigResult> {
-  const res = await fetch(`${getApiBaseUrl()}/configs/${id}/test`, { method: 'POST' })
-  if (!res.ok) {
-    const error = await res.json()
-    throw new Error(error.error || 'Test failed')
-  }
-  return res.json()
-}
-
 // Provider API
 export async function getProviders(): Promise<Provider[]> {
   const res = await fetch(`${getApiBaseUrl()}/providers`)
   if (!res.ok) throw new Error('Failed to fetch providers')
-  return res.json()
-}
-
-export async function getProvider(id: string): Promise<Provider> {
-  const res = await fetch(`${getApiBaseUrl()}/providers/${id}`)
-  if (!res.ok) throw new Error('Failed to fetch provider')
   return res.json()
 }
 
@@ -341,12 +239,6 @@ export async function getModels(providerId?: string): Promise<ModelConfig[]> {
     : `${getApiBaseUrl()}/models`
   const res = await fetch(url)
   if (!res.ok) throw new Error('Failed to fetch models')
-  return res.json()
-}
-
-export async function getModel(id: string): Promise<ModelConfig> {
-  const res = await fetch(`${getApiBaseUrl()}/models/${id}`)
-  if (!res.ok) throw new Error('Failed to fetch model')
   return res.json()
 }
 
@@ -419,19 +311,6 @@ export async function deleteMessage(sessionId: string, messageId: string): Promi
 }
 
 // Chat API
-export async function chat(request: ChatRequest): Promise<ChatResponse> {
-  const res = await fetch(`${getApiBaseUrl()}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request)
-  })
-  if (!res.ok) {
-    const error = await res.json()
-    throw new Error(error.error || 'Chat failed')
-  }
-  return res.json()
-}
-
 export interface StreamResult {
   stream: AsyncGenerator<StreamChunk>
   sessionId: string | null
