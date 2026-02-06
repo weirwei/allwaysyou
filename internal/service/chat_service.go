@@ -155,16 +155,20 @@ func (s *ChatService) Chat(ctx context.Context, req *model.ChatRequest) (*model.
 		log.Printf("[ChatService:Chat] Failed to save assistant memory: %v", err)
 	}
 
-	// Extract and save knowledge asynchronously
-	log.Printf("[ChatService:Chat] Starting async knowledge extraction...")
-	go func() {
-		log.Printf("[ChatService:Chat:Async] ProcessConversation starting...")
-		if err := s.memoryManager.ProcessConversation(context.Background(), session.ID, query, resp.Message.Content, llmAdapter); err != nil {
-			log.Printf("[ChatService:Chat:Async] Failed to extract knowledge: %v", err)
-		} else {
-			log.Printf("[ChatService:Chat:Async] ProcessConversation completed")
-		}
-	}()
+	// Extract and save knowledge asynchronously (only if key signals detected)
+	if memory.ShouldTriggerExtraction(query) {
+		log.Printf("[ChatService:Chat] Key signals detected, starting async knowledge extraction...")
+		go func() {
+			log.Printf("[ChatService:Chat:Async] ProcessConversation starting...")
+			if err := s.memoryManager.ProcessConversation(context.Background(), session.ID, query, resp.Message.Content, llmAdapter); err != nil {
+				log.Printf("[ChatService:Chat:Async] Failed to extract knowledge: %v", err)
+			} else {
+				log.Printf("[ChatService:Chat:Async] ProcessConversation completed")
+			}
+		}()
+	} else {
+		log.Printf("[ChatService:Chat] No key signals detected, skipping knowledge extraction")
+	}
 
 	// Update session timestamp
 	session.UpdatedAt = time.Now()
@@ -274,16 +278,20 @@ func (s *ChatService) ChatStream(ctx context.Context, req *model.ChatRequest) (<
 					log.Printf("[ChatService:ChatStream:Async] Failed to save assistant memory: %v", err)
 				}
 
-				// Extract and save knowledge asynchronously
-				log.Printf("[ChatService:ChatStream:Async] Starting knowledge extraction...")
-				go func(userQuery, assistantResp string) {
-					log.Printf("[ChatService:ChatStream:Async:Knowledge] ProcessConversation starting...")
-					if err := s.memoryManager.ProcessConversation(context.Background(), session.ID, userQuery, assistantResp, llmAdapter); err != nil {
-						log.Printf("[ChatService:ChatStream:Async:Knowledge] Failed: %v", err)
-					} else {
-						log.Printf("[ChatService:ChatStream:Async:Knowledge] ProcessConversation completed")
-					}
-				}(query, fullContent)
+				// Extract and save knowledge asynchronously (only if key signals detected)
+				if memory.ShouldTriggerExtraction(query) {
+					log.Printf("[ChatService:ChatStream:Async] Key signals detected, starting knowledge extraction...")
+					go func(userQuery, assistantResp string) {
+						log.Printf("[ChatService:ChatStream:Async:Knowledge] ProcessConversation starting...")
+						if err := s.memoryManager.ProcessConversation(context.Background(), session.ID, userQuery, assistantResp, llmAdapter); err != nil {
+							log.Printf("[ChatService:ChatStream:Async:Knowledge] Failed: %v", err)
+						} else {
+							log.Printf("[ChatService:ChatStream:Async:Knowledge] ProcessConversation completed")
+						}
+					}(query, fullContent)
+				} else {
+					log.Printf("[ChatService:ChatStream:Async] No key signals detected, skipping knowledge extraction")
+				}
 
 				// Update session
 				session.UpdatedAt = time.Now()

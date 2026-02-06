@@ -210,10 +210,11 @@ async function loadMemoryConfigs() {
 
 async function saveMemoryConfig(key: string) {
   const value = editingConfigs.value[key]
-  if (!value) return
+  if (value === undefined || value === null || value === '') return
 
   try {
-    await updateSystemConfig(key, value)
+    // Convert to string since backend expects string type
+    await updateSystemConfig(key, String(value))
     // Update local value
     const config = memoryConfigs.value.find(c => c.key === key)
     if (config) {
@@ -228,7 +229,8 @@ async function saveMemoryConfig(key: string) {
 async function saveAllMemoryConfigs() {
   try {
     for (const config of memoryConfigs.value) {
-      await updateSystemConfig(config.key, editingConfigs.value[config.key])
+      // Convert to string since backend expects string type
+      await updateSystemConfig(config.key, String(editingConfigs.value[config.key]))
     }
     await loadMemoryConfigs() // Reload to confirm
     showToast('所有配置已保存', 'success')

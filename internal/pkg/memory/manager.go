@@ -71,8 +71,8 @@ func (m *DefaultManager) SaveConversationMemory(ctx context.Context, sessionID s
 
 // AddKnowledge adds extracted knowledge (long-term, global)
 func (m *DefaultManager) AddKnowledge(ctx context.Context, opts AddKnowledgeOptions) (*model.Knowledge, error) {
-	log.Printf("[Knowledge:Add] Starting - Category=%s, Source=%s, Importance=%.2f, ContentLen=%d",
-		opts.Category, opts.Source, opts.Importance, len(opts.Content))
+	log.Printf("[Knowledge:Add] Starting - Category=%s, Source=%s, Importance=%.2f, Tier=%s, ContentLen=%d",
+		opts.Category, opts.Source, opts.Importance, opts.Tier, len(opts.Content))
 
 	if opts.Content == "" {
 		log.Printf("[Knowledge:Add] Error: content cannot be empty")
@@ -86,10 +86,15 @@ func (m *DefaultManager) AddKnowledge(ctx context.Context, opts AddKnowledgeOpti
 	if opts.Source == "" {
 		opts.Source = model.SourceExtracted
 	}
+	if opts.Tier == "" {
+		opts.Tier = model.TierLongTerm // default to long-term
+	}
 
 	knowledge := &model.Knowledge{
 		ID:        uuid.New().String(),
 		Content:   opts.Content,
+		Tier:      opts.Tier,
+		HitCount:  0,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -236,8 +241,9 @@ func (m *DefaultManager) BuildContext(ctx context.Context, sessionID, query stri
 		log.Printf("[Memory:BuildContext] Found %d knowledge results", len(knowledgeResults))
 	}
 
-	// 3. Build context from knowledge
+	// 3. Build context from knowledge and record hits
 	var knowledgeParts []string
+	var includedIDs []string
 	for _, kr := range knowledgeResults {
 		// Skip if same content as query
 		if kr.Knowledge.Content == query {
@@ -247,13 +253,23 @@ func (m *DefaultManager) BuildContext(ctx context.Context, sessionID, query stri
 		// Include knowledge with sufficient score
 		if kr.Score > m.config.ContextRelevanceThreshold {
 			knowledgeParts = append(knowledgeParts, kr.Knowledge.Content)
-			log.Printf("[Memory:BuildContext] Include knowledge - ID=%s, Score=%.3f, Content='%s'",
-				kr.Knowledge.ID, kr.Score, truncateStr(kr.Knowledge.Content, 50))
+			includedIDs = append(includedIDs, kr.Knowledge.ID)
+			log.Printf("[Memory:BuildContext] Include knowledge - ID=%s, Score=%.3f, Tier=%s, Content='%s'",
+				kr.Knowledge.ID, kr.Score, kr.Knowledge.Tier, truncateStr(kr.Knowledge.Content, 50))
 			if len(knowledgeParts) >= m.config.MaxKnowledgeInContext {
 				log.Printf("[Memory:BuildContext] Reached max knowledge parts (%d)", m.config.MaxKnowledgeInContext)
 				break
 			}
 		}
+	}
+
+	// Record hits asynchronously for included knowledge (helps mid-term promotion)
+	if len(includedIDs) > 0 {
+		go func(ids []string) {
+			for _, id := range ids {
+				_ = m.RecordKnowledgeHit(context.Background(), id)
+			}
+		}(includedIDs)
 	}
 
 	// 4. Build system message with knowledge
@@ -315,6 +331,20 @@ func (m *DefaultManager) ProcessConversation(ctx context.Context, sessionID, use
 		log.Printf("[Knowledge:Process] Processing fact %d/%d - Category=%s, Importance=%.2f, Content='%s'",
 			i+1, len(facts), fact.Category, fact.Importance, truncateStr(fact.Content, 50))
 
+		// Confidence filtering: skip low-confidence facts
+		if fact.Importance < m.config.MidTermThreshold {
+			log.Printf("[Knowledge:Process] SKIP (low confidence %.2f < %.2f) - Content='%s'",
+				fact.Importance, m.config.MidTermThreshold, truncateStr(fact.Content, 50))
+			continue
+		}
+
+		// Determine tier based on importance
+		tier := model.TierMidTerm
+		if fact.Importance >= m.config.LongTermThreshold {
+			tier = model.TierLongTerm
+		}
+		log.Printf("[Knowledge:Process] Tier=%s for importance=%.2f", tier, fact.Importance)
+
 		// Search for similar existing knowledge
 		similar, err := m.SearchKnowledge(ctx, SearchOptions{
 			Query:      fact.Content,
@@ -351,6 +381,7 @@ func (m *DefaultManager) ProcessConversation(ctx context.Context, sessionID, use
 				Category:   fact.Category,
 				Source:     model.SourceExtracted,
 				Importance: fact.Importance,
+				Tier:       tier,
 			})
 			if err != nil {
 				log.Printf("[Knowledge:Process] Error creating new knowledge: %v", err)
@@ -363,12 +394,13 @@ func (m *DefaultManager) ProcessConversation(ctx context.Context, sessionID, use
 			}
 
 		case ActionCreate:
-			log.Printf("[Knowledge:Process] CREATE - Content='%s'", truncateStr(fact.Content, 50))
+			log.Printf("[Knowledge:Process] CREATE (Tier=%s) - Content='%s'", tier, truncateStr(fact.Content, 50))
 			newKnowledge, err := m.AddKnowledge(ctx, AddKnowledgeOptions{
 				Content:    fact.Content,
 				Category:   fact.Category,
 				Source:     model.SourceExtracted,
 				Importance: fact.Importance,
+				Tier:       tier,
 			})
 			if err != nil {
 				log.Printf("[Knowledge:Process] Error creating knowledge: %v", err)
@@ -424,4 +456,92 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// RecordKnowledgeHit records a hit for a knowledge entry and checks for promotion
+func (m *DefaultManager) RecordKnowledgeHit(ctx context.Context, knowledgeID string) error {
+	// Record the hit
+	if err := m.knowledgeRepo.RecordHit(knowledgeID); err != nil {
+		log.Printf("[Knowledge:Hit] Error recording hit for %s: %v", knowledgeID, err)
+		return err
+	}
+
+	// Check if this knowledge should be promoted
+	knowledge, err := m.knowledgeRepo.GetByID(knowledgeID)
+	if err != nil || knowledge == nil {
+		return err
+	}
+
+	// Only check promotion for mid-term knowledge
+	if knowledge.Tier == model.TierMidTerm && knowledge.HitCount >= m.config.MidTermPromoteHits {
+		log.Printf("[Knowledge:Hit] Promoting %s to long-term (hits=%d)", knowledgeID, knowledge.HitCount)
+		if err := m.PromoteToLongTerm(ctx, knowledgeID); err != nil {
+			log.Printf("[Knowledge:Hit] Error promoting %s: %v", knowledgeID, err)
+		}
+	}
+
+	return nil
+}
+
+// PromoteToLongTerm promotes a mid-term knowledge to long-term tier
+func (m *DefaultManager) PromoteToLongTerm(ctx context.Context, knowledgeID string) error {
+	log.Printf("[Knowledge:Promote] Promoting %s to long-term", knowledgeID)
+
+	// Update database
+	if err := m.knowledgeRepo.PromoteToLongTerm(knowledgeID); err != nil {
+		return fmt.Errorf("failed to promote in db: %w", err)
+	}
+
+	// Update vector store metadata
+	if doc, ok := m.vectorStore.Get(knowledgeID); ok {
+		metadata := doc.MetaData
+		if metadata == nil {
+			metadata = &vector.DocumentMetadata{}
+		}
+		// Increase importance for promoted knowledge
+		metadata.Importance = max(metadata.Importance, m.config.LongTermThreshold)
+		if err := m.vectorStore.UpdateMetadata(knowledgeID, metadata); err != nil {
+			log.Printf("[Knowledge:Promote] Error updating vector metadata: %v", err)
+		}
+	}
+
+	log.Printf("[Knowledge:Promote] Complete - %s promoted to long-term", knowledgeID)
+	return nil
+}
+
+// CleanupExpiredMidTerm removes mid-term knowledge that has expired
+func (m *DefaultManager) CleanupExpiredMidTerm(ctx context.Context) (int64, error) {
+	log.Printf("[Knowledge:Cleanup] Starting cleanup of expired mid-term knowledge (expire days=%d)", m.config.MidTermExpireDays)
+
+	count, err := m.knowledgeRepo.DeleteExpiredMidTerm(m.config.MidTermExpireDays)
+	if err != nil {
+		log.Printf("[Knowledge:Cleanup] Error: %v", err)
+		return 0, err
+	}
+
+	log.Printf("[Knowledge:Cleanup] Deleted %d expired mid-term knowledge entries", count)
+	return count, nil
+}
+
+// PromoteEligibleMidTerm promotes all mid-term knowledge that has reached the hit threshold
+func (m *DefaultManager) PromoteEligibleMidTerm(ctx context.Context) (int, error) {
+	log.Printf("[Knowledge:PromoteEligible] Checking for mid-term knowledge ready for promotion (min hits=%d)", m.config.MidTermPromoteHits)
+
+	eligible, err := m.knowledgeRepo.GetMidTermReadyForPromotion(m.config.MidTermPromoteHits)
+	if err != nil {
+		log.Printf("[Knowledge:PromoteEligible] Error: %v", err)
+		return 0, err
+	}
+
+	promoted := 0
+	for _, k := range eligible {
+		if err := m.PromoteToLongTerm(ctx, k.ID); err != nil {
+			log.Printf("[Knowledge:PromoteEligible] Failed to promote %s: %v", k.ID, err)
+			continue
+		}
+		promoted++
+	}
+
+	log.Printf("[Knowledge:PromoteEligible] Promoted %d mid-term knowledge entries to long-term", promoted)
+	return promoted, nil
 }

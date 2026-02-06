@@ -32,7 +32,7 @@ const (
 
 // LLM prompts for fact extraction
 const (
-	FactExtractionPrompt = `分析以下对话，提取用户透露的关键信息。
+	FactExtractionPrompt = `分析以下对话，提取用户透露的**值得长期记忆**的关键信息。
 
 对话:
 用户: %s
@@ -43,15 +43,26 @@ const (
 - category: 类别（personal_info=个人信息, preference=偏好, fact=事实, event=事件）
 - importance: 重要性(0-1)
 
+**应该保存的信息（长期记忆）：**
+- 用户的个人信息（姓名、职业、住址等）
+- 用户的长期偏好（喜好、习惯等）
+- 用户的重要背景信息
+
+**不应该保存的信息：**
+- 当前操作的临时细节（如"开启了某模式"、"指定了某参数"）
+- 一次性问题排查的场景描述
+- 临时的技术配置或设置
+- 只在当前对话有意义的上下文
+
 示例输出:
 [
   {"content": "用户名字是张三", "category": "personal_info", "importance": 0.9},
-  {"content": "用户喜欢喝咖啡", "category": "preference", "importance": 0.6}
+  {"content": "用户偏好使用Python编程", "category": "preference", "importance": 0.7}
 ]
 
-如果没有值得记住的信息，返回空数组: []
+如果没有值得**长期记忆**的信息，返回空数组: []
 
-注意：只提取用户明确说出的信息，不要推断。`
+注意：只提取用户明确说出的、具有长期价值的信息，不要推断，不要保存临时操作细节。`
 
 	ConflictDetectionPrompt = `判断新信息是否与已有信息冲突或重复。
 

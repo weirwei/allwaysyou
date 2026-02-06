@@ -56,6 +56,14 @@ type MemoryConfig struct {
 	SimilarKnowledgeThreshold  float32 `mapstructure:"similar_knowledge_threshold"`  // Threshold for similar knowledge search (default: 0.7)
 	ContextRelevanceThreshold  float32 `mapstructure:"context_relevance_threshold"`  // Min score for including in context (default: 0.5)
 
+	// Confidence thresholds for tiered memory
+	LongTermThreshold float32 `mapstructure:"long_term_threshold"` // Min importance for long-term memory (default: 0.7)
+	MidTermThreshold  float32 `mapstructure:"mid_term_threshold"`  // Min importance for mid-term memory (default: 0.4)
+
+	// Mid-term memory promotion settings
+	MidTermPromoteHits int `mapstructure:"mid_term_promote_hits"` // Hits required to promote to long-term (default: 3)
+	MidTermExpireDays  int `mapstructure:"mid_term_expire_days"`  // Days before mid-term memory expires (default: 7)
+
 	// Limits
 	DefaultSearchLimit    int `mapstructure:"default_search_limit"`     // Default limit for search queries (default: 10)
 	ContextKnowledgeLimit int `mapstructure:"context_knowledge_limit"`  // Max knowledge items in context (default: 20)
@@ -146,6 +154,20 @@ func (m *MemoryConfig) applyDefaults() {
 	}
 	if m.ContextRelevanceThreshold <= 0 {
 		m.ContextRelevanceThreshold = 0.5
+	}
+	// Confidence thresholds for tiered memory
+	if m.LongTermThreshold <= 0 {
+		m.LongTermThreshold = 0.7
+	}
+	if m.MidTermThreshold <= 0 {
+		m.MidTermThreshold = 0.4
+	}
+	// Mid-term memory settings
+	if m.MidTermPromoteHits <= 0 {
+		m.MidTermPromoteHits = 3
+	}
+	if m.MidTermExpireDays <= 0 {
+		m.MidTermExpireDays = 7
 	}
 	if m.DefaultSearchLimit <= 0 {
 		m.DefaultSearchLimit = 10

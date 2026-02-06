@@ -31,6 +31,7 @@ type AddKnowledgeOptions struct {
 	Category   model.KnowledgeCategory
 	Source     model.KnowledgeSource
 	Importance float32
+	Tier       model.KnowledgeTier // Memory tier (mid-term or long-term)
 }
 
 // SearchOptions represents options for searching knowledge
